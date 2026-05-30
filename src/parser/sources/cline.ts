@@ -46,6 +46,8 @@ function mapClineTool(
       return { name: 'replace_in_file', kind: 'edit' };
     case 'newFileCreated':
       return { name: 'write_to_file', kind: 'write' };
+    case 'fileDeleted':
+      return { name: 'delete_file', kind: 'edit' };
     default:
       // listFilesTopLevel, listFilesRecursive, searchFiles, listCodeDefinitions…
       return { name: tool, kind: null };
@@ -60,6 +62,10 @@ export function parseClineTask(taskDir: string): ParsedSession | null {
 
   const taskId = path.basename(taskDir);
   let title: string | null = null;
+  // Real Cline tasks frequently omit a say:"task" message — the user's initial
+  // prompt is then the first say:"text". Capture the first user-facing text so
+  // we can fall back to it for the title.
+  let firstUserText: string | null = null;
   let projectPath: string | null = null;
 
   let inputTokens = 0;
@@ -96,12 +102,19 @@ export function parseClineTask(taskDir: string): ParsedSession | null {
     }
     const isoAt = typeof m.ts === 'number' ? new Date(m.ts).toISOString() : null;
 
+    // Remember the first plain user/assistant text (the task lives here when
+    // there is no dedicated say:"task").
+    if (!firstUserText && (m.say === 'task' || m.say === 'text') && typeof m.text === 'string') {
+      const t = m.text.replace(/\s+/g, ' ').trim();
+      if (t) firstUserText = t;
+    }
+
     if (m.say === 'task') {
       if (!title && m.text) title = m.text.replace(/\s+/g, ' ').trim().slice(0, 120);
       userTurnCount++;
       continue;
     }
-    if (m.say === 'user_feedback') {
+    if (m.say === 'user_feedback' || m.say === 'user_feedback_diff') {
       userTurnCount++;
       continue;
     }
@@ -111,7 +124,10 @@ export function parseClineTask(taskDir: string): ParsedSession | null {
         tokensOut?: number;
         cacheReads?: number;
         cacheWrites?: number;
+        cost?: number;
         cwd?: string;
+        request?: string;
+        cancelReason?: string;
       }>(m.text);
       if (info) {
         const ti = Number(info.tokensIn) || 0;
@@ -120,7 +136,15 @@ export function parseClineTask(taskDir: string): ParsedSession | null {
         cacheReadTokens += Number(info.cacheReads) || 0;
         cacheCreationTokens += Number(info.cacheWrites) || 0;
         if (ti > 0) lastInputTokens = ti;
-        if (!projectPath && typeof info.cwd === 'string') projectPath = info.cwd;
+        // The cwd is sometimes a field, but more often embedded in the request
+        // prompt as "# Current Working Directory (PATH) Files".
+        if (!projectPath) {
+          if (typeof info.cwd === 'string') projectPath = info.cwd;
+          else if (typeof info.request === 'string') {
+            const m2 = /# Current Working Directory \(([^)]+)\)/.exec(info.request);
+            if (m2) projectPath = m2[1].trim();
+          }
+        }
       }
       continue;
     }
@@ -156,7 +180,12 @@ export function parseClineTask(taskDir: string): ParsedSession | null {
       });
       continue;
     }
-    if (m.say === 'error' || m.ask === 'mistake_limit_reached') {
+    if (
+      m.say === 'error' ||
+      m.say === 'error_retry' ||
+      m.ask === 'api_req_failed' ||
+      m.ask === 'mistake_limit_reached'
+    ) {
       errorCount++;
       // Attribute to the most recent tool call when possible.
       const last = toolCalls[toolCalls.length - 1];
@@ -169,6 +198,11 @@ export function parseClineTask(taskDir: string): ParsedSession | null {
   }
 
   if (firstTs == null) return null;
+
+  // Fall back to the first user text when no say:"task" was present, and ensure
+  // at least one user turn is counted for a non-empty task.
+  if (!title && firstUserText) title = firstUserText.slice(0, 120);
+  if (userTurnCount === 0) userTurnCount = 1;
   const startedAt = new Date(firstTs).toISOString();
   const endedAt = lastTs != null ? new Date(lastTs).toISOString() : startedAt;
   const durationMs = lastTs != null ? Math.max(0, lastTs - firstTs) : null;

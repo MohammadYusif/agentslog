@@ -338,8 +338,9 @@ npm test           # vitest suite
 ## 🧩 Other sources (experimental)
 
 Beyond Claude Code, `agentslog` can ingest other agents' transcripts. These
-adapters are **experimental**—built against each tool's documented format but
-not yet validated against a wide range of real-world installs. Please report
+adapters are **experimental**—validated against Cline's published message
+schema and against real Aider/Cline transcripts collected from public repos,
+but not yet across the full range of versions and configurations. Please report
 format mismatches.
 
 * **Cline** (`saoudrizwan.claude-dev`): auto-detected from VS Code's
@@ -361,9 +362,9 @@ in the app-data directory or the `AGENTSLOG_PRICING` env var.
 
 ## ⚠️ Limitations (v0.2)
 
-* **Cline & Aider are experimental.** Their parsers are unvalidated against live
-  installs and may miss or misattribute data until verified—Claude Code is the
-  fully-supported path.
+* **Cline & Aider are experimental.** Their parsers are validated against real
+  sample transcripts and Cline's published schema, but not across every version
+  and config—Claude Code remains the fully-supported path.
 * **Cost is an estimate.** Figures use per-model list prices, not your actual
   invoice; prices change and historical sessions may have been billed differently.
 * **Terminal only.** Plain colored output—no web UI or TUI.

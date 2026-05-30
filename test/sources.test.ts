@@ -61,6 +61,40 @@ describe('Cline adapter', () => {
     expect(auth.editCount).toBe(1);
   });
 
+  it('recovers title from first text when say:"task" is absent (real-world shape)', () => {
+    // Many real Cline tasks have no say:"task"; the user prompt is the first
+    // say:"text", the cwd is embedded in the request, and failures surface as
+    // ask:"api_req_failed". Verified against real samples from GitHub.
+    const dir = tmp();
+    const taskDir = path.join(dir, '1730049990374');
+    fs.mkdirSync(taskDir);
+    const ui = [
+      { ts: 1730049990377, type: 'say', say: 'text', text: 'non funziona', images: [] },
+      {
+        ts: 1730049990393,
+        type: 'say',
+        say: 'api_req_started',
+        text: JSON.stringify({
+          request: '<task>\nnon funziona\n</task>\n\n# Current Working Directory (c:/WORK/PM_service/backup) Files\ncrea_ap.py',
+          tokensIn: 16486,
+          tokensOut: 143,
+          cacheReads: 14080,
+          cacheWrites: 2406,
+        }),
+      },
+      { ts: 1730049990983, type: 'ask', ask: 'api_req_failed', text: '(no status code or body)' },
+    ];
+    fs.writeFileSync(path.join(taskDir, 'ui_messages.json'), JSON.stringify(ui), 'utf-8');
+
+    const s = parseClineTask(taskDir)!;
+    expect(s.aiTitle).toBe('non funziona'); // recovered from first text
+    expect(s.inputTokens).toBe(16486);
+    expect(s.cacheReadTokens).toBe(14080);
+    expect(s.projectPath).toBe('c:/WORK/PM_service/backup'); // parsed from request prompt
+    expect(s.errorCount).toBe(1); // ask:"api_req_failed"
+    expect(s.userTurnCount).toBe(1);
+  });
+
   it('returns null when ui_messages.json is missing or empty', () => {
     const dir = tmp();
     const taskDir = path.join(dir, 'empty');
