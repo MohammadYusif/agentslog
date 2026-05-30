@@ -1,11 +1,17 @@
-# 🕵️‍♂️ agentslog
+<p align="center">
+  <img src="assets/logo.svg" alt="agentslog" width="140" height="140">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/tests-54%20passing-brightgreen.svg)](#-development)
+<h1 align="center">agentslog</h1>
 
-**Your Claude Code history is a database. Query it like one.**
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg" alt="Node.js ≥20"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6.svg" alt="TypeScript"></a>
+  <a href="#-development"><img src="https://img.shields.io/badge/tests-54%20passing-brightgreen.svg" alt="54 tests passing"></a>
+</p>
+
+<p align="center"><strong>Your Claude Code history is a database. Query it like one.</strong></p>
 
 Every Claude Code session writes a full JSONL transcript to `~/.claude/projects/`—every tool call, file edit, token count, and error. That data is already on your disk. You just couldn't ask it anything. Until now.
 
