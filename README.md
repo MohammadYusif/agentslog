@@ -64,22 +64,26 @@ Write                             279
 
 ## 🏗️ How it works
 
-`agentslog` never touches the network. It reads the JSONL files Claude Code already writes, streams them through a parser, and builds a structured local index you can query in milliseconds.
+`agentslog` never touches the network. It reads the transcript files your agents already write, streams them through per-source parsers, links sub-agent runs to the session that spawned them, and builds a structured local index you can query in milliseconds.
 
 ```mermaid
 flowchart LR
-    A["~/.claude/projects/<br/>**/*.jsonl"] -->|streaming<br/>readline| B[Parser]
-    B -->|skip corrupt /<br/>sidechain lines| C{Extract}
-    C --> D[sessions]
+    A1["Claude Code<br/>~/.claude/projects"] --> B[Source<br/>adapters]
+    A2["Cline<br/>(experimental)"] --> B
+    A3["Aider<br/>(experimental)"] --> B
+    B -->|streaming parse,<br/>skip corrupt lines| C{Extract}
+    C --> D[sessions<br/>+ sub-agent links]
     C --> E[tool_calls]
     C --> F[files_touched]
     D --> G[(SQLite<br/>WAL mode)]
     E --> G
     F --> G
     G --> H[agentslog CLI]
-    H --> I[query · stats<br/>show · diff]
+    H --> I[query · stats · errors<br/>show · diff]
 
-    style A fill:#1e293b,stroke:#475569,color:#e2e8f0
+    style A1 fill:#1e293b,stroke:#475569,color:#e2e8f0
+    style A2 fill:#1e293b,stroke:#475569,color:#94a3b8
+    style A3 fill:#1e293b,stroke:#475569,color:#94a3b8
     style G fill:#0f766e,stroke:#14b8a6,color:#f0fdfa
     style I fill:#7c3aed,stroke:#a78bfa,color:#f5f3ff
 ```
@@ -157,6 +161,7 @@ Tokens
   Billed in     5,754
   Output        140,022
   Cache         read 9.6M, created 476.1k
+  Est. cost     $23.88  (opus-4-8 list price)
 
 Tool calls: 61 (10 errors)
   Bash            25
@@ -170,8 +175,23 @@ Files touched: 3
   src/middleware.ts             2    0    5
   README.md                     1    0    0
 
+Sub-agents (3)
+  ID        MODEL       TOKENS   TOOLS  TITLE
+  agent-ad  opus-4-8    65.7k    55     research market
+  agent-ae  opus-4-8    45.0k    36     validate idea
+  agent-ab  opus-4-8    60.8k    82     build mvp
+
+Rolled up (session + sub-agents)
+  Tokens        287,638  (in: 145.6k  out: 142.1k)
+  Tool calls    213 (18 errors)
+  Est. cost     $85.41 (est.)
+
 Transcript: ~/.claude/projects/my-api/a1f3c8d2-…jsonl
 ```
+
+Sub-agent runs (e.g. anything spawned by the `Agent` tool) are indexed as their
+own rows and **rolled up into the parent** — so the tokens, tool calls, and cost
+you see reflect the *whole* job, not just the main thread.
 
 ### 🪞 Compare two runs of the same task
 
@@ -193,6 +213,31 @@ Tool usage (A vs B)
   Edit            15    1     -14
   PowerShell      0     21    +21
 ```
+
+### 🚨 Triage what's been failing
+
+> *"What tool calls have been erroring lately, and in which sessions?"*
+
+```bash
+agentslog errors --last 7d
+```
+
+```
+Recent tool-call failures (last 7d) — showing 3
+
+✗ Bash · my-api · 2d ago
+  $ npm run build
+  Exit code 1: error TS2345: Argument of type 'string' is not assignable…
+  ↳ session a1f3c8d2 "Refactor auth middleware"
+
+✗ Edit · my-api · 2d ago
+  src/auth.ts
+  <tool_use_error>String to replace not found in file.
+  ↳ session a1f3c8d2 "Refactor auth middleware"
+```
+
+A sub-agent failure is attributed to the top-level session that spawned it, so
+the `↳ session` line is always something you can open with `agentslog show`.
 
 ### ⚙️ Audit a specific tool's usage
 
@@ -220,9 +265,11 @@ agentslog watch                      # run in the background; indexes on the fly
 
 Everything stays on your machine. Here's what makes it trustworthy and fast:
 
-* **Local-only, zero network.** `agentslog` makes no outbound calls—ever. It only reads files Claude Code already wrote.
+* **Local-only, zero network.** `agentslog` makes no outbound calls—ever. It only reads transcript files your agents already wrote.
 * **Streaming parser.** Transcripts are read line-by-line via Node's `readline`, so multi-megabyte sessions index with constant memory. Partially-written or corrupt lines (from a crash or `Ctrl+C` mid-session) are skipped silently rather than halting the ingest.
+* **Sub-agent rollup.** Sub-agent (sidechain) transcripts are indexed as their own rows and linked to the parent that spawned them, so tokens, tool calls, files, and cost roll up into the top-level session everywhere you look.
 * **Honest token accounting.** `input_tokens` is the sum of every assistant usage block—what you were actually billed. Because every request re-sends the full history, this is large by design, and it's the number that matters for cost.
+* **Cost estimates, clearly labelled.** Per-model list prices (overridable) turn token counts into an estimated dollar figure in `stats` and `show`. Unknown models are reported as a lower bound, never a misleading `$0`.
 * **Idempotent ingest.** Re-ingesting a session replaces its rows atomically in one transaction. Run `ingest` or `watch` as often as you like; nothing duplicates.
 * **Safe under concurrency.** The database runs in **WAL mode** with a busy timeout, so the `watch` daemon and a manual query can hit it at the same time without locking each other out.
 * **Stable project grouping.** Sessions are grouped by their `~/.claude/projects/` directory name (`project_hash`), which never changes even if you rename the folder. The displayed path is the most recent `cwd` seen for that group.
@@ -245,6 +292,8 @@ erDiagram
     sessions ||--o{ files_touched : has
     sessions {
         text id PK
+        text parent_session_id FK
+        text source
         text project_hash
         text ai_title
         text model
@@ -286,11 +335,37 @@ npm test           # vitest suite
 
 ---
 
-## ⚠️ Limitations (v0.1)
+## 🧩 Other sources (experimental)
 
-* **Sub-agent activity isn't rolled up yet.** Sub-agent (sidechain) transcripts share their parent's session id, so indexing them naively would overwrite the parent. For now they're skipped—stats reflect the main session thread. Attributing sub-agent work to the parent is the headline item for v0.2.
-* **Claude Code only.** Aider / Cline / Continue support is on the roadmap once the Claude Code path is rock-solid.
-* **No dollar costs.** Per-model pricing shifts too often to bake in reliably.
+Beyond Claude Code, `agentslog` can ingest other agents' transcripts. These
+adapters are **experimental**—built against each tool's documented format but
+not yet validated against a wide range of real-world installs. Please report
+format mismatches.
+
+* **Cline** (`saoudrizwan.claude-dev`): auto-detected from VS Code's
+  `globalStorage`. Point `AGENTSLOG_CLINE_DIR` at a non-standard location
+  (VS Codium, Cursor) if needed.
+* **Aider**: Aider writes `.aider.chat.history.md` into each repo, so there's no
+  central location—tell `agentslog` where to look:
+
+  ```bash
+  # one or more repos / history files, delimited like PATH
+  AGENTSLOG_AIDER_PATHS="~/code/project-a:~/code/project-b" agentslog ingest
+  agentslog sessions --source aider
+  ```
+
+Pricing for non-Claude models isn't built in; add your own via a `pricing.json`
+in the app-data directory or the `AGENTSLOG_PRICING` env var.
+
+---
+
+## ⚠️ Limitations (v0.2)
+
+* **Cline & Aider are experimental.** Their parsers are unvalidated against live
+  installs and may miss or misattribute data until verified—Claude Code is the
+  fully-supported path.
+* **Cost is an estimate.** Figures use per-model list prices, not your actual
+  invoice; prices change and historical sessions may have been billed differently.
 * **Terminal only.** Plain colored output—no web UI or TUI.
 
 ---
