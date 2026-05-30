@@ -18,6 +18,18 @@ import {
   baseName,
   padTo,
 } from '../../utils/format.js';
+import { estimateCost, formatCost } from '../../utils/pricing.js';
+import type { SessionRow } from '../../db/queries.js';
+
+/** Estimate one session row's cost from its model + token columns. */
+function rowCost(s: SessionRow): number | null {
+  return estimateCost(s.model, {
+    inputTokens: s.input_tokens,
+    outputTokens: s.output_tokens,
+    cacheReadTokens: s.cache_read_tokens,
+    cacheCreationTokens: s.cache_creation_tokens,
+  });
+}
 
 export interface ShowOptions {
   json?: boolean;
@@ -99,6 +111,14 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
         `created ${abbreviateNumber(session.cache_creation_tokens)}`
     )}\n`
   );
+  const ownCost = rowCost(session);
+  if (ownCost != null) {
+    process.stdout.write(
+      `${field('  Est. cost')}${formatCost(ownCost)}  ` +
+        chalk.dim(`(${shortModel(session.model)} list price)`) +
+        '\n'
+    );
+  }
 
   process.stdout.write('\n');
   const errNote =
@@ -194,6 +214,19 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
         errNote2 +
         '\n'
     );
+
+    // Rolled-up cost: each sub-agent may run a different model, so price each
+    // row independently and sum (only when at least one row is priceable).
+    const costs = [session, ...children].map(rowCost);
+    if (costs.some((c) => c != null)) {
+      const rolledCost = costs.reduce<number>((a, c) => a + (c ?? 0), 0);
+      const unpriced = costs.some((c) => c == null);
+      process.stdout.write(
+        `${field('  Est. cost')}${formatCost(rolledCost)}` +
+          chalk.dim(unpriced ? ' (≥, some models unpriced)' : ' (est.)') +
+          '\n'
+      );
+    }
   }
 
   process.stdout.write(chalk.dim(`\nTranscript: ${session.raw_path}\n`));

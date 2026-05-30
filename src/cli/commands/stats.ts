@@ -3,9 +3,10 @@
  */
 import chalk from 'chalk';
 import { openDb } from '../../db/index.js';
-import { statsTotals, topFiles, topTools } from '../../db/queries.js';
+import { statsTotals, topFiles, topTools, tokensByModel } from '../../db/queries.js';
 import { windowCutoffIso } from '../../utils/time.js';
 import { abbreviateNumber, withCommas, baseName, padTo } from '../../utils/format.js';
+import { estimateCost, formatCost } from '../../utils/pricing.js';
 
 export interface StatsOptions {
   last?: string;
@@ -22,9 +23,42 @@ export function runStats(options: StatsOptions = {}): void {
   const files = topFiles(db, sinceIso, 10);
   const tools = topTools(db, sinceIso, 10);
 
+  // Estimate cost per-model (pricing is per-model) and sum. Track whether any
+  // tokens belonged to a model we have no price for, so we can flag the total
+  // as a lower bound rather than silently undercounting.
+  const byModel = tokensByModel(db, sinceIso);
+  let totalCost = 0;
+  let hasPricedTokens = false;
+  let hasUnpricedTokens = false;
+  for (const m of byModel) {
+    const cost = estimateCost(m.model, {
+      inputTokens: m.input_tokens,
+      outputTokens: m.output_tokens,
+      cacheReadTokens: m.cache_read_tokens,
+      cacheCreationTokens: m.cache_creation_tokens,
+    });
+    if (cost == null) {
+      if (m.input_tokens + m.output_tokens > 0) hasUnpricedTokens = true;
+    } else {
+      totalCost += cost;
+      hasPricedTokens = true;
+    }
+  }
+
   if (options.json) {
     process.stdout.write(
-      JSON.stringify({ period, totals, topFiles: files, topTools: tools }, null, 2) + '\n'
+      JSON.stringify(
+        {
+          period,
+          totals,
+          estimatedCostUsd: hasPricedTokens ? Number(totalCost.toFixed(4)) : null,
+          costIsLowerBound: hasUnpricedTokens,
+          topFiles: files,
+          topTools: tools,
+        },
+        null,
+        2
+      ) + '\n'
     );
     return;
   }
@@ -57,6 +91,10 @@ export function runStats(options: StatsOptions = {}): void {
       chalk.dim(`(errors: ${withCommas(totals.errors)}, ${errPct}%)`) +
       '\n'
   );
+  if (hasPricedTokens) {
+    const note = hasUnpricedTokens ? ' (≥, some models unpriced)' : ' (est.)';
+    process.stdout.write(`${label('COST')}${formatCost(totalCost)}${chalk.dim(note)}\n`);
+  }
 
   if (files.length > 0) {
     process.stdout.write('\n');
