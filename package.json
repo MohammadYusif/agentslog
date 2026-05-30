@@ -1,0 +1,50 @@
+{
+  "name": "agentslog",
+  "version": "0.1.0",
+  "description": "Query your Claude Code session history as a local SQLite database",
+  "type": "module",
+  "bin": { "agentslog": "./dist/index.js" },
+  "engines": { "node": ">=20" },
+  "files": ["dist"],
+  "keywords": [
+    "claude-code",
+    "claude",
+    "llm",
+    "ai-agents",
+    "developer-tools",
+    "cli",
+    "sqlite",
+    "observability",
+    "session-history",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "MohammadYusif",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MohammadYusif/agentslog.git"
+  },
+  "homepage": "https://github.com/MohammadYusif/agentslog#readme",
+  "bugs": {
+    "url": "https://github.com/MohammadYusif/agentslog/issues"
+  },
+  "scripts": {
+    "build": "tsup src/cli/index.ts --format esm --target node20 --out-dir dist --clean",
+    "dev": "tsup src/cli/index.ts --format esm --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "chalk": "^5.4.1",
+    "chokidar": "^4.0.3",
+    "commander": "^13.1.0",
+    "env-paths": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.17.57",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.3"
+  }
+}
