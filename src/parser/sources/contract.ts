@@ -89,6 +89,19 @@ export function validateParsedSession(s: ParsedSession): string[] {
     });
   }
 
+  if (s.reasoning !== undefined) {
+    if (!Array.isArray(s.reasoning)) {
+      at('reasoning', 'must be an array when present');
+    } else {
+      s.reasoning.forEach((r, i) => {
+        if (!Number.isInteger(r.sequenceNum) || r.sequenceNum < 0) {
+          at(`reasoning[${i}].sequenceNum`, 'must be a non-negative integer');
+        }
+        if (typeof r.text !== 'string') at(`reasoning[${i}].text`, 'must be a string');
+      });
+    }
+  }
+
   return issues;
 }
 

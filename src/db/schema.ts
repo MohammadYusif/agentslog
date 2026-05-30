@@ -2,7 +2,7 @@
  * SQLite schema definition and the current schema version.
  */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -66,4 +66,11 @@ CREATE INDEX IF NOT EXISTS idx_s_project  ON sessions(project_path);
 CREATE INDEX IF NOT EXISTS idx_s_hash     ON sessions(project_hash);
 CREATE INDEX IF NOT EXISTS idx_s_parent   ON sessions(parent_session_id);
 CREATE INDEX IF NOT EXISTS idx_s_source   ON sessions(source);
+
+-- v3: opt-in full-text index of assistant reasoning ('thinking') blocks.
+-- Populated only when AGENTSLOG_INDEX_REASONING is set during ingest. The
+-- session_id / sequence_num columns are UNINDEXED (stored, not full-text) so
+-- rows can be filtered and deleted per-session on re-ingest.
+CREATE VIRTUAL TABLE IF NOT EXISTS reasoning_fts
+  USING fts5(session_id UNINDEXED, sequence_num UNINDEXED, text);
 `;

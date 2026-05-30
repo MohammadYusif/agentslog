@@ -24,6 +24,7 @@ export interface ContentBlock {
   content?: unknown;
   // text / thinking
   text?: string;
+  thinking?: string;
 }
 
 export interface Message {
@@ -71,6 +72,12 @@ export interface ParsedFileTouched {
   editCount: number;
 }
 
+/** A captured reasoning ("thinking") block, indexed for full-text search. */
+export interface ParsedReasoning {
+  sequenceNum: number;
+  text: string;
+}
+
 /** The fully normalized representation of one session transcript. */
 export interface ParsedSession {
   id: string;
@@ -98,4 +105,6 @@ export interface ParsedSession {
   rawPath: string;
   toolCalls: ParsedToolCall[];
   filesTouched: ParsedFileTouched[];
+  /** Reasoning blocks — only populated when reasoning indexing is enabled. */
+  reasoning?: ParsedReasoning[];
 }

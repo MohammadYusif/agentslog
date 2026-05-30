@@ -23,10 +23,19 @@ export interface IngestOptions {
   dir?: string;
   /** Suppress per-file error output. */
   quiet?: boolean;
+  /** Capture assistant reasoning ('thinking') blocks into the FTS index. */
+  reasoning?: boolean;
+  /** Suppress ALL stdout (used by the MCP server, whose stdout is the protocol). */
+  silent?: boolean;
 }
 
 /** Run a full ingest pass over every available source. */
 export async function runIngest(options: IngestOptions = {}): Promise<void> {
+  // Opt-in reasoning capture: the parser reads this env var per block.
+  if (options.reasoning) process.env.AGENTSLOG_INDEX_REASONING = '1';
+  const reasoningOn = process.env.AGENTSLOG_INDEX_REASONING != null;
+  // When silent, swallow stdout entirely (never corrupt an MCP stdio channel).
+  const out = options.silent ? (_s: string) => {} : (s: string) => process.stdout.write(s);
   const db = openDb();
 
   // Assemble the work: either a single Claude Code directory, or every
@@ -46,7 +55,7 @@ export async function runIngest(options: IngestOptions = {}): Promise<void> {
 
   const totalUnits = work.reduce((n, w) => n + w.units.length, 0);
   if (totalUnits === 0) {
-    process.stdout.write(`${chalk.yellow('No transcripts found')} for any source.\n`);
+    out(`${chalk.yellow('No transcripts found')} for any source.\n`);
     return;
   }
 
@@ -61,7 +70,7 @@ export async function runIngest(options: IngestOptions = {}): Promise<void> {
     const tag = adapter.experimental
       ? `${adapter.label} ${chalk.dim('(experimental)')}`
       : adapter.label;
-    process.stdout.write(`${chalk.bold(tag)}: scanning ${units.length} unit(s)…\n`);
+    out(`${chalk.bold(tag)}: scanning ${units.length} unit(s)…\n`);
 
     let srcIndexed = 0;
     for (const unit of units) {
@@ -97,8 +106,12 @@ export async function runIngest(options: IngestOptions = {}): Promise<void> {
         }
       }
     }
-    process.stdout.write(`  ${chalk.green(String(srcIndexed))} indexed\n`);
+    out(`  ${chalk.green(String(srcIndexed))} indexed\n`);
   }
+
+  // Keep the FTS index healthy after a reasoning-enabled run (it churns the
+  // reasoning_fts table via delete + re-insert).
+  if (reasoningOn) db.pragma('optimize');
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   const parts = [
@@ -108,7 +121,7 @@ export async function runIngest(options: IngestOptions = {}): Promise<void> {
     failed ? `${chalk.red(String(failed))} failed` : null,
   ].filter(Boolean);
 
-  process.stdout.write(
+  out(
     `${chalk.bold('Done')} — ${parts.join(', ')} · ${abbreviateNumber(totalTokens)} tokens · ${elapsed}s\n`,
   );
 }

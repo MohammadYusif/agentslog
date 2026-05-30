@@ -12,6 +12,7 @@ import readline from 'node:readline';
 import type {
   ContentBlock,
   ParsedFileTouched,
+  ParsedReasoning,
   ParsedSession,
   ParsedToolCall,
   RawEvent,
@@ -26,6 +27,12 @@ const COMMAND_TOOLS = new Set(['Bash', 'PowerShell']);
 
 const MAX_COMMAND_LEN = 500;
 const MAX_ERROR_LEN = 2000;
+
+/** Whether to capture assistant reasoning ('thinking') blocks for indexing. */
+function reasoningEnabled(): boolean {
+  const v = process.env.AGENTSLOG_INDEX_REASONING;
+  return v != null && v !== '' && v !== '0' && v.toLowerCase() !== 'false';
+}
 
 /** Normalize a filesystem path to POSIX separators for stable storage/querying. */
 export function normalizePath(filePath: string): string {
@@ -128,6 +135,11 @@ export async function parseSessionFile(
   /** Aggregated file activity keyed by normalized path. */
   const files = new Map<string, ParsedFileTouched>();
 
+  // Reasoning capture is opt-in (thinking blocks are large + sensitive).
+  const captureReasoning = reasoningEnabled();
+  let reasoningSeq = 0;
+  const reasoning: ParsedReasoning[] = [];
+
   const bumpFile = (fp: string, kind: 'read' | 'write' | 'edit') => {
     let entry = files.get(fp);
     if (!entry) {
@@ -226,6 +238,13 @@ export async function parseSessionFile(
       const content = msg?.content;
       if (Array.isArray(content)) {
         for (const block of content as ContentBlock[]) {
+          // Capture reasoning ('thinking') blocks when indexing is enabled.
+          if (block.type === 'thinking') {
+            if (captureReasoning && typeof block.thinking === 'string' && block.thinking.trim()) {
+              reasoning.push({ sequenceNum: reasoningSeq++, text: block.thinking });
+            }
+            continue;
+          }
           if (block.type !== 'tool_use') continue;
           const toolName = block.name ?? 'unknown';
           const filePath2 = extractFilePath(toolName, block.input);
@@ -326,5 +345,6 @@ export async function parseSessionFile(
     rawPath: filePath,
     toolCalls,
     filesTouched: [...files.values()],
+    reasoning: captureReasoning ? reasoning : undefined,
   };
 }

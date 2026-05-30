@@ -402,3 +402,68 @@ export function recentErrors(db: Database.Database, filters: ErrorFilters = {}):
   `;
   return db.prepare(sql).all(params) as ErrorRow[];
 }
+
+export interface ReasoningHit {
+  session_id: string;
+  ai_title: string | null;
+  project_path: string | null;
+  project_hash: string;
+  source: string;
+  started_at: string;
+  sequence_num: number;
+  snippet: string;
+}
+
+export interface ReasoningFilters {
+  sinceIso?: string | null;
+  limit?: number | null;
+}
+
+/**
+ * Turn a free-text query into a safe FTS5 MATCH expression: extract word
+ * tokens, quote each as a phrase, and AND them together. Avoids FTS5 syntax
+ * errors from punctuation/operators in user input.
+ */
+function toFtsMatch(raw: string): string {
+  const terms = raw.match(/[\p{L}\p{N}_]+/gu) ?? [];
+  return terms.map((t) => `"${t}"`).join(' ');
+}
+
+/**
+ * Full-text search the indexed reasoning ('thinking') blocks. Returns the
+ * best-ranked matches with a highlighted snippet and their session context.
+ * Empty when reasoning indexing was never enabled (table is empty).
+ */
+export function searchReasoning(
+  db: Database.Database,
+  query: string,
+  filters: ReasoningFilters = {},
+): ReasoningHit[] {
+  const match = toFtsMatch(query);
+  if (!match) return [];
+
+  const limit = filters.limit && filters.limit > 0 ? Math.floor(filters.limit) : 20;
+  const params: Record<string, unknown> = { match };
+  let timeClause = '';
+  if (filters.sinceIso) {
+    timeClause = 'AND s.started_at >= @since';
+    params.since = filters.sinceIso;
+  }
+
+  const sql = `
+    SELECT r.session_id                          AS session_id,
+           s.ai_title                            AS ai_title,
+           s.project_path                        AS project_path,
+           s.project_hash                        AS project_hash,
+           s.source                              AS source,
+           s.started_at                          AS started_at,
+           CAST(r.sequence_num AS INTEGER)       AS sequence_num,
+           snippet(reasoning_fts, 2, '[', ']', '…', 14) AS snippet
+    FROM reasoning_fts r
+    JOIN sessions s ON s.id = r.session_id
+    WHERE reasoning_fts MATCH @match ${timeClause}
+    ORDER BY rank
+    LIMIT ${limit}
+  `;
+  return db.prepare(sql).all(params) as ReasoningHit[];
+}

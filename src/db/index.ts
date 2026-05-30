@@ -32,6 +32,28 @@ export function openDb(customPath?: string): Database.Database {
   return db;
 }
 
+/**
+ * Open a **read-only** connection to the application database. Used by the MCP
+ * server so its reads never lock out a concurrent writer (e.g. the `Stop` hook
+ * running `ingest`) — WAL mode plus a read-only handle avoids `SQLITE_BUSY`.
+ * Ensures the schema is current first via a short-lived writable connection.
+ */
+export function openDbReadonly(): Database.Database {
+  const file = dbPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+
+  // Guarantee the schema exists / is migrated before opening read-only
+  // (a read-only handle can't create tables).
+  const rw = new Database(file);
+  rw.pragma('journal_mode = WAL');
+  migrate(rw);
+  rw.close();
+
+  const db = new Database(file, { readonly: true });
+  db.pragma('busy_timeout = 5000');
+  return db;
+}
+
 /** Close the shared connection (used by tests and on watch shutdown). */
 export function closeDb(): void {
   if (singleton) {
@@ -44,8 +66,10 @@ interface PreparedWrites {
   insertSession: Database.Statement;
   deleteToolCalls: Database.Statement;
   deleteFiles: Database.Statement;
+  deleteReasoning: Database.Statement;
   insertToolCall: Database.Statement;
   insertFile: Database.Statement;
+  insertReasoning: Database.Statement;
 }
 
 const writesCache = new WeakMap<Database.Database, PreparedWrites>();
@@ -76,6 +100,7 @@ function prepareWrites(db: Database.Database): PreparedWrites {
 
   const deleteToolCalls = db.prepare('DELETE FROM tool_calls WHERE session_id = ?');
   const deleteFiles = db.prepare('DELETE FROM files_touched WHERE session_id = ?');
+  const deleteReasoning = db.prepare('DELETE FROM reasoning_fts WHERE session_id = ?');
 
   const insertToolCall = db.prepare(`
     INSERT INTO tool_calls (
@@ -95,12 +120,19 @@ function prepareWrites(db: Database.Database): PreparedWrites {
     )
   `);
 
+  const insertReasoning = db.prepare(`
+    INSERT INTO reasoning_fts (session_id, sequence_num, text)
+    VALUES (@sessionId, @sequenceNum, @text)
+  `);
+
   const prepared: PreparedWrites = {
     insertSession,
     deleteToolCalls,
     deleteFiles,
+    deleteReasoning,
     insertToolCall,
     insertFile,
+    insertReasoning,
   };
   writesCache.set(db, prepared);
   return prepared;
@@ -146,6 +178,7 @@ export function writeSession(db: Database.Database, session: ParsedSession): voi
 
     w.deleteToolCalls.run(s.id);
     w.deleteFiles.run(s.id);
+    w.deleteReasoning.run(s.id);
 
     for (const tc of s.toolCalls) {
       w.insertToolCall.run({
@@ -169,6 +202,16 @@ export function writeSession(db: Database.Database, session: ParsedSession): voi
         writeCount: f.writeCount,
         editCount: f.editCount,
       });
+    }
+
+    if (s.reasoning) {
+      for (const r of s.reasoning) {
+        w.insertReasoning.run({
+          sessionId: s.id,
+          sequenceNum: r.sequenceNum,
+          text: r.text,
+        });
+      }
     }
   });
 
