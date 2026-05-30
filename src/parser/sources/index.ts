@@ -12,6 +12,11 @@ import type { SourceAdapter } from './types.js';
 export { aiderAdapter, parseAiderHistory } from './aider.js';
 export { claudeCodeAdapter } from './claude-code.js';
 export { clineAdapter, parseClineTask } from './cline.js';
+export {
+  assertValidSession,
+  defineAdapter,
+  validateParsedSession,
+} from './contract.js';
 export type { DiscoveredUnit, SourceAdapter } from './types.js';
 
 /** All registered adapters, primary source first. */

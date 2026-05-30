@@ -9,6 +9,7 @@
 import chalk from 'chalk';
 import { openDb, writeSession } from '../../db/index.js';
 import { discoverSessionFiles } from '../../parser/index.js';
+import { validateParsedSession } from '../../parser/sources/contract.js';
 import {
   availableAdapters,
   claudeCodeAdapter,
@@ -52,6 +53,7 @@ export async function runIngest(options: IngestOptions = {}): Promise<void> {
   let indexed = 0;
   let skipped = 0;
   let failed = 0;
+  let invalid = 0;
   let totalTokens = 0;
   const start = Date.now();
 
@@ -70,6 +72,18 @@ export async function runIngest(options: IngestOptions = {}): Promise<void> {
           continue;
         }
         for (const session of sessions) {
+          // Contract enforcement: never write a non-conforming session. This
+          // protects the index from bugs in any (especially third-party) adapter.
+          const issues = validateParsedSession(session);
+          if (issues.length > 0) {
+            invalid++;
+            if (!options.quiet) {
+              process.stderr.write(
+                `${chalk.yellow('⚠')} ${adapter.name} ${session.id}: ${issues.join('; ')}\n`,
+              );
+            }
+            continue;
+          }
           writeSession(db, session);
           srcIndexed++;
           indexed++;
@@ -90,6 +104,7 @@ export async function runIngest(options: IngestOptions = {}): Promise<void> {
   const parts = [
     `${chalk.green(String(indexed))} indexed`,
     skipped ? `${chalk.yellow(String(skipped))} skipped` : null,
+    invalid ? `${chalk.yellow(String(invalid))} invalid` : null,
     failed ? `${chalk.red(String(failed))} failed` : null,
   ].filter(Boolean);
 
