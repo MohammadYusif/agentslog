@@ -7,10 +7,13 @@ import chalk from 'chalk';
  * handler in ./commands so the parsing surface stays thin and testable.
  */
 import { Command } from 'commander';
+import { runDbVacuum } from './commands/db.js';
 import { runDiff } from './commands/diff.js';
 import { runErrors } from './commands/errors.js';
+import { runHookCheck, runHookIngest } from './commands/hook.js';
 import { runIngest } from './commands/ingest.js';
 import { runQuery } from './commands/query.js';
+import { runReasoning } from './commands/reasoning.js';
 import { runSessions } from './commands/sessions.js';
 import { runShow } from './commands/show.js';
 import { runStats } from './commands/stats.js';
@@ -21,15 +24,16 @@ const program = new Command();
 program
   .name('agentslog')
   .description('Query your Claude Code session history as a local SQLite database')
-  .version('0.2.0');
+  .version('0.3.0');
 
 program
   .command('ingest')
   .description('Scan ~/.claude/projects/**/*.jsonl and index all sessions into SQLite')
   .option('--dir <path>', 'override the Claude projects directory')
   .option('-q, --quiet', 'suppress per-file error output')
+  .option('--reasoning', 'also index assistant reasoning (thinking) blocks for search')
   .action(async (opts) => {
-    await runIngest({ dir: opts.dir, quiet: opts.quiet });
+    await runIngest({ dir: opts.dir, quiet: opts.quiet, reasoning: opts.reasoning });
   });
 
 program
@@ -96,11 +100,54 @@ program
   });
 
 program
+  .command('reasoning')
+  .description('Full-text search the indexed reasoning (thinking) blocks')
+  .argument('<query>', 'words to search for in past reasoning')
+  .option('--last <window>', 'restrict to a time window, e.g. 7d')
+  .option('--limit <n>', 'maximum matches to show (default 20)')
+  .option('--json', 'output raw JSON')
+  .action((query, opts) => {
+    runReasoning(query, opts);
+  });
+
+program
   .command('watch')
   .description('Watch ~/.claude/projects for new sessions and index them live')
   .option('--no-initial', 'skip the initial full ingest before watching')
   .action(async (opts) => {
     await runWatch({ noInitial: opts.initial === false });
+  });
+
+const db = program.command('db').description('Database maintenance');
+db.command('vacuum')
+  .description('Reclaim space and optimize indexes (VACUUM + PRAGMA optimize)')
+  .action(() => {
+    runDbVacuum();
+  });
+
+program
+  .command('mcp')
+  .description('Run as an MCP server so an agent can query its own history')
+  .option('--no-ingest', 'skip the freshness ingest before serving')
+  .action(async (opts) => {
+    // Lazy-load: keeps the MCP SDK + zod off the hot path of fast commands
+    // like `hook check` (a blocking PreToolUse hook).
+    const { runMcp } = await import('./commands/mcp.js');
+    await runMcp({ ingest: opts.ingest !== false });
+  });
+
+const hook = program.command('hook').description('Claude Code hook integrations');
+hook
+  .command('check')
+  .description('PreToolUse: warn if a tool/command has failed before (reads stdin)')
+  .action(async () => {
+    await runHookCheck();
+  });
+hook
+  .command('ingest')
+  .description('Stop/SessionEnd: refresh the index so history stays current')
+  .action(async () => {
+    await runHookIngest();
   });
 
 program.parseAsync(process.argv).catch((err) => {

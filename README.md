@@ -8,7 +8,7 @@
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg" alt="Node.js ≥20"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6.svg" alt="TypeScript"></a>
-  <a href="#-development"><img src="https://img.shields.io/badge/tests-61%20passing-brightgreen.svg" alt="61 tests passing"></a>
+  <a href="#-development"><img src="https://img.shields.io/badge/tests-72%20passing-brightgreen.svg" alt="72 tests passing"></a>
 </p>
 
 <p align="center"><strong>Your Claude Code history is a database. Query it like one.</strong></p>
@@ -265,6 +265,43 @@ agentslog watch                      # run in the background; indexes on the fly
 
 > **Time windows:** `--last` accepts `Ns`, `Nm`, `Nh`, `Nd`, `Nw` (seconds, minutes, hours, days, weeks).
 > **Machine-readable:** add `--json` to `sessions`, `query`, and `stats` for piping into `jq` or scripts.
+
+---
+
+## 🧠 Give your agent a memory
+
+The same history is even more useful to the *agent* than to you. Coding agents
+are stateless — they forget everything between sessions. agentslog can feed that
+memory back so an agent stops repeating its own mistakes.
+
+**Stop repeating failures (a `PreToolUse` hook).** Before a command runs,
+agentslog checks whether the same kind of command failed before and warns:
+
+```
+$ echo '{"tool_name":"Bash","tool_input":{"command":"ls -Recurse src"}}' | agentslog hook check
+⚠ agentslog memory: you (or a past session) hit 1 similar Bash failure(s) before:
+- 15h ago: `ls "C:/…/src" -Recurse -Name` → Exit code 2: ls: unknown option -- e
+Consider adjusting before running this.
+```
+
+**Query history mid-task (MCP server).** Register agentslog as an MCP server and
+the agent gets read tools — `recent_errors`, `find_sessions_by_file`,
+`search_reasoning`, and more — to consult its own past on demand:
+
+```bash
+claude mcp add agentslog -- agentslog mcp
+```
+
+**Recall the _why_, not just the _what_ (reasoning search).** Opt in to indexing
+the agent's thinking and search the reasoning behind past decisions:
+
+```bash
+agentslog ingest --reasoning
+agentslog reasoning "why natural sort"
+```
+
+Full setup — hooks, MCP, and reasoning indexing — is in
+**[docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md)**.
 
 ---
 
