@@ -1,8 +1,9 @@
 # 🕵️‍♂️ agentslog
 
-[![npm version](https://img.shields.io/npm/v/agentslog.svg)](https://www.npmjs.com/package/agentslog)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/node/v/agentslog)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6.svg)](https://www.typescriptlang.org/)
+[![Tests](https://img.shields.io/badge/tests-54%20passing-brightgreen.svg)](#-development)
 
 **Your Claude Code history is a database. Query it like one.**
 
