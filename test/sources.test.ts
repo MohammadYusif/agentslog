@@ -155,6 +155,35 @@ describe('Aider adapter', () => {
     expect(parseAiderHistory(file)[0].id).toBe(a.id);
   });
 
+  it('extracts edits with Windows backslash paths and a Cost suffix (real-world shape)', () => {
+    // Mirrors real histories: backslash paths must normalize to POSIX, and the
+    // token line carries a trailing "Cost: …" that must be ignored. Verified
+    // against real .aider.chat.history.md files from public repos.
+    const dir = tmp();
+    const file = path.join(dir, '.aider.chat.history.md');
+    fs.writeFileSync(
+      file,
+      [
+        '# aider chat started at 2024-09-01 10:00:00',
+        '',
+        '#### add a store',
+        '',
+        '> Applied edit to src\\routes\\+page.svelte',
+        '> Applied edit to src\\lib\\stores\\data.js',
+        '> Tokens: 6.4k sent, 1.3k received. Cost: $0.04 message, $0.07 session.',
+        '',
+      ].join('\n'),
+      'utf-8'
+    );
+    const [s] = parseAiderHistory(file);
+    expect(s.inputTokens).toBe(6400);
+    expect(s.outputTokens).toBe(1300);
+    const paths = s.filesTouched.map((f) => f.filePath).sort();
+    expect(paths).toEqual(['src/lib/stores/data.js', 'src/routes/+page.svelte']);
+    expect(paths.every((p) => !p.includes('\\'))).toBe(true);
+    expect(s.filesTouched.every((f) => f.editCount === 1)).toBe(true);
+  });
+
   it('handles a history file with no session headers', () => {
     const dir = tmp();
     const file = path.join(dir, '.aider.chat.history.md');

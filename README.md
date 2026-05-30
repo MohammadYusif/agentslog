@@ -337,11 +337,13 @@ npm test           # vitest suite
 
 ## 🧩 Other sources (experimental)
 
-Beyond Claude Code, `agentslog` can ingest other agents' transcripts. These
-adapters are **experimental**—validated against Cline's published message
-schema and against real Aider/Cline transcripts collected from public repos,
-but not yet across the full range of versions and configurations. Please report
-format mismatches.
+Beyond Claude Code, `agentslog` can ingest other agents' transcripts. Both
+adapters have been validated against real-world transcripts — Cline against its
+published message schema plus real successful and failed tasks, Aider against
+several real `.aider.chat.history.md` files including ones with file edits
+(Windows and POSIX paths). They're still marked **experimental** because that
+sampling doesn't cover every version, model, and edit format — not because the
+basics are unproven. Please report any format mismatches you hit.
 
 * **Cline** (`saoudrizwan.claude-dev`): auto-detected from VS Code's
   `globalStorage`. Point `AGENTSLOG_CLINE_DIR` at a non-standard location
