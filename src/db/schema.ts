@@ -2,7 +2,7 @@
  * SQLite schema definition and the current schema version.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -27,7 +27,12 @@ CREATE TABLE IF NOT EXISTS sessions (
   error_count           INTEGER DEFAULT 0,
   user_turn_count       INTEGER DEFAULT 0,
   raw_path              TEXT NOT NULL,
-  ingested_at           TEXT NOT NULL
+  ingested_at           TEXT NOT NULL,
+  -- v2: sub-agent (sidechain) transcripts are indexed as their own rows and
+  -- linked to the top-level session that spawned them. NULL = top-level.
+  parent_session_id     TEXT,
+  -- v2: which agent tool produced this transcript ('claude-code', 'aider', …).
+  source                TEXT NOT NULL DEFAULT 'claude-code'
 );
 
 CREATE TABLE IF NOT EXISTS tool_calls (
@@ -54,8 +59,11 @@ CREATE TABLE IF NOT EXISTS files_touched (
 CREATE INDEX IF NOT EXISTS idx_tc_session ON tool_calls(session_id);
 CREATE INDEX IF NOT EXISTS idx_tc_file    ON tool_calls(file_path);
 CREATE INDEX IF NOT EXISTS idx_tc_tool    ON tool_calls(tool_name);
+CREATE INDEX IF NOT EXISTS idx_tc_success ON tool_calls(success);
 CREATE INDEX IF NOT EXISTS idx_ft_path    ON files_touched(file_path);
 CREATE INDEX IF NOT EXISTS idx_s_started  ON sessions(started_at);
 CREATE INDEX IF NOT EXISTS idx_s_project  ON sessions(project_path);
 CREATE INDEX IF NOT EXISTS idx_s_hash     ON sessions(project_hash);
+CREATE INDEX IF NOT EXISTS idx_s_parent   ON sessions(parent_session_id);
+CREATE INDEX IF NOT EXISTS idx_s_source   ON sessions(source);
 `;

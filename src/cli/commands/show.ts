@@ -7,6 +7,7 @@ import {
   resolveSession,
   toolCallsForSession,
   filesForSession,
+  childSessions,
 } from '../../db/queries.js';
 import { relativeTime, formatDuration } from '../../utils/time.js';
 import {
@@ -43,10 +44,15 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
 
   const tools = toolCallsForSession(db, session.id);
   const files = filesForSession(db, session.id);
+  const children = childSessions(db, session.id);
 
   if (options.json) {
     process.stdout.write(
-      JSON.stringify({ session, toolCalls: tools, filesTouched: files }, null, 2) + '\n'
+      JSON.stringify(
+        { session, toolCalls: tools, filesTouched: files, subAgents: children },
+        null,
+        2
+      ) + '\n'
     );
     return;
   }
@@ -54,6 +60,11 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
   const field = (k: string) => chalk.bold.cyan(padTo(k, 16));
 
   process.stdout.write(chalk.bold.underline(session.ai_title ?? '(untitled session)') + '\n\n');
+  if (session.parent_session_id) {
+    process.stdout.write(
+      chalk.magenta(`⮡ sub-agent of ${session.parent_session_id.slice(0, 8)}`) + '\n'
+    );
+  }
   process.stdout.write(`${field('Session')}${session.id}\n`);
   process.stdout.write(`${field('Project')}${session.project_path ?? session.project_hash}\n`);
   process.stdout.write(`${field('Model')}${shortModel(session.model)}\n`);
@@ -139,6 +150,50 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
         process.stdout.write(`    ${chalk.dim(truncate(e.error_text.replace(/\s+/g, ' '), 90))}\n`);
       }
     }
+  }
+
+  // Sub-agent rollup: list each spawned sub-agent and the combined totals.
+  if (children.length > 0) {
+    const childInput = children.reduce((a, c) => a + c.input_tokens, 0);
+    const childOutput = children.reduce((a, c) => a + c.output_tokens, 0);
+    const childTools = children.reduce((a, c) => a + c.tool_call_count, 0);
+    const childErrors = children.reduce((a, c) => a + c.error_count, 0);
+
+    process.stdout.write('\n');
+    process.stdout.write(chalk.bold.magenta(`Sub-agents (${children.length})\n`));
+    process.stdout.write(
+      chalk.dim(
+        `  ${padTo('ID', 10)}${padTo('MODEL', 12)}${padTo('TOKENS', 9)}${padTo('TOOLS', 7)}TITLE\n`
+      )
+    );
+    for (const c of children) {
+      const ctokens = abbreviateNumber(c.input_tokens + c.output_tokens);
+      process.stdout.write(
+        `  ${padTo(c.id.slice(0, 8), 10)}${padTo(shortModel(c.model), 12)}` +
+          `${padTo(ctokens, 9)}${padTo(String(c.tool_call_count), 7)}` +
+          `${truncate(c.ai_title ?? '(sub-agent)', 36)}\n`
+      );
+    }
+
+    process.stdout.write('\n');
+    process.stdout.write(chalk.bold('Rolled up (session + sub-agents)\n'));
+    process.stdout.write(
+      `${field('  Tokens')}${withCommas(
+        session.input_tokens + session.output_tokens + childInput + childOutput
+      )}  ` +
+        chalk.dim(
+          `(in: ${abbreviateNumber(session.input_tokens + childInput)}  ` +
+            `out: ${abbreviateNumber(session.output_tokens + childOutput)})`
+        ) +
+        '\n'
+    );
+    const rolledErrors = session.error_count + childErrors;
+    const errNote2 = rolledErrors > 0 ? chalk.red(` (${rolledErrors} errors)`) : '';
+    process.stdout.write(
+      `${field('  Tool calls')}${withCommas(session.tool_call_count + childTools)}` +
+        errNote2 +
+        '\n'
+    );
   }
 
   process.stdout.write(chalk.dim(`\nTranscript: ${session.raw_path}\n`));

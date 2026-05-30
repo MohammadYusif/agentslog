@@ -56,14 +56,16 @@ function prepareWrites(db: Database.Database): PreparedWrites {
 
   const insertSession = db.prepare(`
     INSERT OR REPLACE INTO sessions (
-      id, project_hash, project_path, ai_title, model, cc_version, git_branch,
+      id, parent_session_id, source,
+      project_hash, project_path, ai_title, model, cc_version, git_branch,
       started_at, ended_at, duration_ms,
       input_tokens, output_tokens, last_input_tokens,
       cache_read_tokens, cache_creation_tokens,
       tool_call_count, error_count, user_turn_count,
       raw_path, ingested_at
     ) VALUES (
-      @id, @projectHash, @projectPath, @aiTitle, @model, @ccVersion, @gitBranch,
+      @id, @parentSessionId, @source,
+      @projectHash, @projectPath, @aiTitle, @model, @ccVersion, @gitBranch,
       @startedAt, @endedAt, @durationMs,
       @inputTokens, @outputTokens, @lastInputTokens,
       @cacheReadTokens, @cacheCreationTokens,
@@ -119,6 +121,8 @@ export function writeSession(db: Database.Database, session: ParsedSession): voi
   const tx = db.transaction((s: ParsedSession) => {
     w.insertSession.run({
       id: s.id,
+      parentSessionId: s.parentSessionId,
+      source: s.source,
       projectHash: s.projectHash,
       projectPath: s.projectPath,
       aiTitle: s.aiTitle,

@@ -37,7 +37,12 @@ export function runStats(options: StatsOptions = {}): void {
   const label = (s: string) => chalk.bold.cyan(padTo(s, 12));
 
   process.stdout.write(`${label('PERIOD')}${period}\n`);
-  process.stdout.write(`${label('SESSIONS')}${withCommas(totals.session_count)}\n`);
+  const sessionsLine =
+    totals.subagent_count > 0
+      ? `${withCommas(totals.session_count)}  ` +
+        chalk.dim(`(+ ${withCommas(totals.subagent_count)} sub-agent run(s))`)
+      : withCommas(totals.session_count);
+  process.stdout.write(`${label('SESSIONS')}${sessionsLine}\n`);
   process.stdout.write(
     `${label('TOKENS')}${abbreviateNumber(totalTokens)}   ` +
       chalk.dim(

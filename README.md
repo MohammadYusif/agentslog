@@ -12,10 +12,6 @@ Every Claude Code session writes a full JSONL transcript to `~/.claude/projects/
 
 **No cloud. No SDK. No account. It runs entirely on your machine and works on your existing history the moment you install it.**
 
-<p align="center">
-  <img src="demo.gif" alt="agentslog demo showing stats and diff commands">
-</p>
-
 ---
 
 ## 💡 Why do I need this?

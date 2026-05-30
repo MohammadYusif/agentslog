@@ -258,22 +258,27 @@ export async function parseSessionFile(
 
   const fileBase = path.basename(filePath, '.jsonl');
 
-  // Skip sub-agent (sidechain) transcripts. They carry the parent's sessionId,
-  // so indexing them would overwrite the canonical parent session row. A file
-  // is a sidechain when its events are predominantly sidechain AND its filename
-  // does not match the sessionId it reports (canonical files are named by their
-  // own sessionId, e.g. "<uuid>.jsonl"; sub-agent files are "agent-<hash>.jsonl").
+  // Detect a sub-agent (sidechain) transcript. These carry the PARENT's
+  // sessionId on every event, so they cannot be keyed by sessionId without
+  // colliding with the parent row. Canonical sessions are named by their own
+  // sessionId ("<uuid>.jsonl"); sub-agent files are named differently
+  // ("agent-<hash>.jsonl"), so a filename that disagrees with the reported
+  // sessionId — on a transcript whose message events are all sidechain — marks
+  // a sub-agent run. Rather than skip it (the old behaviour), we index it under
+  // its own unique id (the filename) and link it to the parent via
+  // parentSessionId, so its tokens/tools/files roll up into the parent.
   const isSidechainFile =
     sidechainEvents > 0 && mainEvents === 0 && sessionId !== null && sessionId !== fileBase;
-  if (isSidechainFile) {
-    return null;
-  }
 
-  // A usable session needs at least an id and a start timestamp.
-  if (!sessionId) {
-    // Fall back to the file name (sessionId UUID) if no event carried it.
+  let parentSessionId: string | null = null;
+  if (isSidechainFile) {
+    parentSessionId = sessionId; // the parent's id, carried by every event
+    sessionId = fileBase; // the sub-agent's own stable, unique id
+  } else if (!sessionId) {
+    // A normal transcript with no explicit sessionId: fall back to the file name.
     sessionId = fileBase;
   }
+
   if (!firstTimestamp) {
     // No timestamped events at all — nothing meaningful to index.
     return null;
@@ -289,6 +294,8 @@ export async function parseSessionFile(
 
   return {
     id: sessionId,
+    parentSessionId,
+    source: 'claude-code',
     projectHash,
     projectPath,
     aiTitle,

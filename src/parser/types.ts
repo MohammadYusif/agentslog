@@ -74,6 +74,10 @@ export interface ParsedFileTouched {
 /** The fully normalized representation of one session transcript. */
 export interface ParsedSession {
   id: string;
+  /** The top-level session that spawned this one, or null if top-level. */
+  parentSessionId: string | null;
+  /** Originating agent tool: 'claude-code', 'aider', 'cline', … */
+  source: string;
   projectHash: string;
   projectPath: string | null;
   aiTitle: string | null;

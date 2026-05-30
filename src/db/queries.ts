@@ -6,6 +6,8 @@ import { normalizePath } from '../parser/claude-code.js';
 
 export interface SessionRow {
   id: string;
+  parent_session_id: string | null;
+  source: string;
   project_hash: string;
   project_path: string | null;
   ai_title: string | null;
@@ -26,6 +28,32 @@ export interface SessionRow {
   raw_path: string;
   ingested_at: string;
 }
+
+/**
+ * A top-level session row enriched with rolled-up totals from its sub-agents.
+ * `rollup_*` fields equal the session's own value plus the sum across all of
+ * its child (sidechain) sessions; `subagent_count` is how many it spawned.
+ */
+export interface SessionRollupRow extends SessionRow {
+  rollup_input_tokens: number;
+  rollup_output_tokens: number;
+  rollup_tool_call_count: number;
+  rollup_error_count: number;
+  subagent_count: number;
+}
+
+/** SQL subquery aggregating child (sub-agent) sessions by their parent id. */
+const CHILD_AGG = `
+  SELECT parent_session_id,
+         SUM(input_tokens)     AS c_input,
+         SUM(output_tokens)    AS c_output,
+         SUM(tool_call_count)  AS c_tools,
+         SUM(error_count)      AS c_errors,
+         COUNT(*)              AS c_count
+  FROM sessions
+  WHERE parent_session_id IS NOT NULL
+  GROUP BY parent_session_id
+`;
 
 export interface ToolCallRow {
   id: string;
@@ -55,24 +83,47 @@ export interface ListFilters {
   limit?: number | null;
 }
 
-/** List sessions newest-first, applying optional time/project filters. */
-export function listSessions(db: Database.Database, filters: ListFilters = {}): SessionRow[] {
-  const clauses: string[] = [];
+/**
+ * List top-level sessions newest-first, each enriched with rolled-up sub-agent
+ * totals. Sub-agent (child) sessions are never listed on their own here — their
+ * activity is folded into the parent's `rollup_*` fields.
+ */
+export function listSessions(db: Database.Database, filters: ListFilters = {}): SessionRollupRow[] {
+  const clauses: string[] = ['s.parent_session_id IS NULL'];
   const params: Record<string, unknown> = {};
 
   if (filters.sinceIso) {
-    clauses.push('started_at >= @since');
+    clauses.push('s.started_at >= @since');
     params.since = filters.sinceIso;
   }
   if (filters.project) {
-    clauses.push('(project_path LIKE @proj OR project_hash LIKE @proj)');
+    clauses.push('(s.project_path LIKE @proj OR s.project_hash LIKE @proj)');
     params.proj = `%${filters.project}%`;
   }
 
-  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const where = `WHERE ${clauses.join(' AND ')}`;
   const limit = filters.limit && filters.limit > 0 ? `LIMIT ${Math.floor(filters.limit)}` : '';
-  const sql = `SELECT * FROM sessions ${where} ORDER BY started_at DESC ${limit}`;
-  return db.prepare(sql).all(params) as SessionRow[];
+  const sql = `
+    SELECT s.*,
+           s.input_tokens    + COALESCE(c.c_input, 0)  AS rollup_input_tokens,
+           s.output_tokens   + COALESCE(c.c_output, 0) AS rollup_output_tokens,
+           s.tool_call_count + COALESCE(c.c_tools, 0)  AS rollup_tool_call_count,
+           s.error_count     + COALESCE(c.c_errors, 0) AS rollup_error_count,
+           COALESCE(c.c_count, 0)                      AS subagent_count
+    FROM sessions s
+    LEFT JOIN (${CHILD_AGG}) c ON c.parent_session_id = s.id
+    ${where}
+    ORDER BY s.started_at DESC
+    ${limit}
+  `;
+  return db.prepare(sql).all(params) as SessionRollupRow[];
+}
+
+/** Child (sub-agent) sessions spawned by a given top-level session. */
+export function childSessions(db: Database.Database, parentId: string): SessionRow[] {
+  return db
+    .prepare('SELECT * FROM sessions WHERE parent_session_id = ? ORDER BY started_at ASC')
+    .all(parentId) as SessionRow[];
 }
 
 /** Resolve a session id prefix to a single row; throws on ambiguity. */
@@ -129,15 +180,19 @@ export function sessionsByFile(
   };
   let timeClause = '';
   if (sinceIso) {
-    timeClause = 'AND s.started_at >= @since';
+    timeClause = 'AND top.started_at >= @since';
     params.since = sinceIso;
   }
+  // A sub-agent may be the one that touched the file; surface the top-level
+  // session that spawned it (via COALESCE to the parent) so the result is
+  // actionable, and de-duplicate when several children hit the same file.
   const sql = `
-    SELECT DISTINCT s.* FROM sessions s
-    JOIN files_touched f ON f.session_id = s.id
+    SELECT DISTINCT top.* FROM files_touched f
+    JOIN sessions s   ON s.id = f.session_id
+    JOIN sessions top ON top.id = COALESCE(s.parent_session_id, s.id)
     WHERE (f.file_path = @exact OR f.file_path LIKE @suffix OR f.file_path = @base)
     ${timeClause}
-    ORDER BY s.started_at DESC
+    ORDER BY top.started_at DESC
   `;
   return db.prepare(sql).all(params) as SessionRow[];
 }
@@ -151,21 +206,27 @@ export function sessionsByTool(
   const params: Record<string, unknown> = { tool };
   let timeClause = '';
   if (sinceIso) {
-    timeClause = 'AND s.started_at >= @since';
+    timeClause = 'AND top.started_at >= @since';
     params.since = sinceIso;
   }
+  // As with file queries, surface the top-level session when a sub-agent ran
+  // the tool, de-duplicating across multiple children.
   const sql = `
-    SELECT DISTINCT s.* FROM sessions s
-    JOIN tool_calls t ON t.session_id = s.id
+    SELECT DISTINCT top.* FROM tool_calls t
+    JOIN sessions s   ON s.id = t.session_id
+    JOIN sessions top ON top.id = COALESCE(s.parent_session_id, s.id)
     WHERE t.tool_name = @tool COLLATE NOCASE
     ${timeClause}
-    ORDER BY s.started_at DESC
+    ORDER BY top.started_at DESC
   `;
   return db.prepare(sql).all(params) as SessionRow[];
 }
 
 export interface StatsTotals {
+  /** Number of top-level sessions (excludes sub-agent runs). */
   session_count: number;
+  /** Number of sub-agent (sidechain) runs folded into those sessions. */
+  subagent_count: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
@@ -174,13 +235,19 @@ export interface StatsTotals {
   errors: number;
 }
 
-/** Aggregate token/tool/error totals over a time window. */
+/**
+ * Aggregate token/tool/error totals over a time window. Token, tool, and error
+ * sums span every row (sub-agents included, since their cost is real); the
+ * session count reflects only top-level sessions, with sub-agents reported
+ * separately as `subagent_count`.
+ */
 export function statsTotals(db: Database.Database, sinceIso?: string | null): StatsTotals {
   const where = sinceIso ? 'WHERE started_at >= @since' : '';
   const row = db
     .prepare(
       `SELECT
-         COUNT(*)                          AS session_count,
+         COALESCE(SUM(CASE WHEN parent_session_id IS NULL     THEN 1 ELSE 0 END),0) AS session_count,
+         COALESCE(SUM(CASE WHEN parent_session_id IS NOT NULL THEN 1 ELSE 0 END),0) AS subagent_count,
          COALESCE(SUM(input_tokens),0)     AS input_tokens,
          COALESCE(SUM(output_tokens),0)    AS output_tokens,
          COALESCE(SUM(cache_read_tokens),0) AS cache_read_tokens,
@@ -191,6 +258,32 @@ export function statsTotals(db: Database.Database, sinceIso?: string | null): St
     )
     .get(sinceIso ? { since: sinceIso } : {}) as StatsTotals;
   return row;
+}
+
+export interface ModelTokensRow {
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+}
+
+/**
+ * Token sums grouped by model over a window, spanning all rows (sub-agents
+ * included). Used to estimate cost, since pricing is per-model.
+ */
+export function tokensByModel(db: Database.Database, sinceIso?: string | null): ModelTokensRow[] {
+  const where = sinceIso ? 'WHERE started_at >= @since' : '';
+  const sql = `
+    SELECT model,
+           COALESCE(SUM(input_tokens),0)          AS input_tokens,
+           COALESCE(SUM(output_tokens),0)         AS output_tokens,
+           COALESCE(SUM(cache_read_tokens),0)     AS cache_read_tokens,
+           COALESCE(SUM(cache_creation_tokens),0) AS cache_creation_tokens
+    FROM sessions ${where}
+    GROUP BY model
+  `;
+  return db.prepare(sql).all(sinceIso ? { since: sinceIso } : {}) as ModelTokensRow[];
 }
 
 export interface CountRow {

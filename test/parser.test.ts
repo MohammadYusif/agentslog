@@ -159,9 +159,10 @@ describe('parseSessionFile', () => {
     expect(s.endedAt).toBe('2026-01-01T00:00:10Z');
   });
 
-  it('skips sub-agent sidechain transcripts (filename != content sessionId, all sidechain)', async () => {
+  it('indexes a sub-agent sidechain transcript as its own row linked to the parent', async () => {
     // Simulate an agent-*.jsonl file: events carry the PARENT sessionId and
-    // isSidechain: true, while the file is named differently.
+    // isSidechain: true, while the file is named differently. It must be indexed
+    // under its OWN id (the filename) and linked to the parent, not skipped.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentslog-test-'));
     createdDirs.push(dir);
     const file = path.join(dir, 'agent-deadbeef.jsonl');
@@ -169,17 +170,21 @@ describe('parseSessionFile', () => {
       file,
       [
         { type: 'user', isSidechain: true, sessionId: 'parent-uuid', timestamp: '2026-01-01T00:00:00Z', message: { role: 'user', content: 'sub task' } },
-        { type: 'assistant', isSidechain: true, sessionId: 'parent-uuid', timestamp: '2026-01-01T00:00:01Z', message: { content: [] } },
+        { type: 'assistant', isSidechain: true, sessionId: 'parent-uuid', timestamp: '2026-01-01T00:00:01Z', message: { usage: { input_tokens: 40, output_tokens: 8 }, content: [] } },
       ]
         .map((e) => JSON.stringify(e))
         .join('\n') + '\n',
       'utf-8'
     );
     const s = await parseSessionFile(file, 'hashSC');
-    expect(s).toBeNull();
+    expect(s).not.toBeNull();
+    expect(s!.id).toBe('agent-deadbeef'); // own unique id (the filename)
+    expect(s!.parentSessionId).toBe('parent-uuid'); // linked to the parent
+    expect(s!.source).toBe('claude-code');
+    expect(s!.inputTokens).toBe(40); // sub-agent tokens captured for rollup
   });
 
-  it('does NOT skip a canonical file whose basename matches its sessionId', async () => {
+  it('treats a canonical file (basename matches sessionId) as a top-level session', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentslog-test-'));
     createdDirs.push(dir);
     const file = path.join(dir, 'parent-uuid.jsonl');
@@ -196,6 +201,7 @@ describe('parseSessionFile', () => {
     const s = await parseSessionFile(file, 'hashMain');
     expect(s).not.toBeNull();
     expect(s!.id).toBe('parent-uuid');
+    expect(s!.parentSessionId).toBeNull(); // top-level
   });
 
   it('counts only real user text turns, not tool_result envelopes', async () => {

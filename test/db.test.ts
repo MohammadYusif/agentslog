@@ -10,12 +10,15 @@ import {
   statsTotals,
   resolveSession,
   toolCallsForSession,
+  childSessions,
 } from '../src/db/queries.js';
 import type { ParsedSession } from '../src/parser/types.js';
 
 function makeSession(overrides: Partial<ParsedSession> = {}): ParsedSession {
   return {
     id: 'sess-1111',
+    parentSessionId: null,
+    source: 'claude-code',
     projectHash: 'hashX',
     projectPath: 'C:/proj',
     aiTitle: 'Test Session',
@@ -127,6 +130,79 @@ describe('db write + query', () => {
     writeSession(db, makeSession({ id: 'new', startedAt: '2026-01-05T00:00:00Z' }));
     const rows = listSessions(db, { sinceIso: '2026-01-01T00:00:00Z' });
     expect(rows.map((r) => r.id)).toEqual(['new']);
+    db.close();
+  });
+});
+
+describe('sub-agent rollup', () => {
+  it('lists only top-level sessions and rolls child tokens/tools into the parent', () => {
+    const db = openDb(dbFile);
+    writeSession(db, makeSession({ id: 'parent', inputTokens: 1000, outputTokens: 200, toolCallCount: 2, errorCount: 1 }));
+    writeSession(
+      db,
+      makeSession({
+        id: 'agent-aaa',
+        parentSessionId: 'parent',
+        inputTokens: 500,
+        outputTokens: 100,
+        toolCallCount: 3,
+        errorCount: 2,
+        toolCalls: [],
+        filesTouched: [],
+      })
+    );
+
+    const rows = listSessions(db);
+    // Only the parent is listed; the sub-agent is folded in.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('parent');
+    expect(rows[0].subagent_count).toBe(1);
+    expect(rows[0].rollup_input_tokens).toBe(1500); // 1000 + 500
+    expect(rows[0].rollup_output_tokens).toBe(300); // 200 + 100
+    expect(rows[0].rollup_tool_call_count).toBe(5); // 2 + 3
+    expect(rows[0].rollup_error_count).toBe(3); // 1 + 2
+    db.close();
+  });
+
+  it('counts top-level sessions but sums tokens across sub-agents in stats', () => {
+    const db = openDb(dbFile);
+    writeSession(db, makeSession({ id: 'parent', inputTokens: 1000, outputTokens: 200, toolCallCount: 2, errorCount: 1 }));
+    writeSession(db, makeSession({ id: 'agent-aaa', parentSessionId: 'parent', inputTokens: 500, outputTokens: 100, toolCallCount: 3, errorCount: 2, toolCalls: [], filesTouched: [] }));
+
+    const totals = statsTotals(db);
+    expect(totals.session_count).toBe(1); // top-level only
+    expect(totals.subagent_count).toBe(1);
+    expect(totals.input_tokens).toBe(1500); // includes sub-agent
+    expect(totals.tool_calls).toBe(5);
+    expect(totals.errors).toBe(3);
+    db.close();
+  });
+
+  it('childSessions returns a parent\'s sub-agents', () => {
+    const db = openDb(dbFile);
+    writeSession(db, makeSession({ id: 'parent' }));
+    writeSession(db, makeSession({ id: 'agent-1', parentSessionId: 'parent', toolCalls: [], filesTouched: [] }));
+    writeSession(db, makeSession({ id: 'agent-2', parentSessionId: 'parent', toolCalls: [], filesTouched: [] }));
+    const kids = childSessions(db, 'parent');
+    expect(kids.map((k) => k.id).sort()).toEqual(['agent-1', 'agent-2']);
+    db.close();
+  });
+
+  it('surfaces the top-level parent when a sub-agent touched a file', () => {
+    const db = openDb(dbFile);
+    writeSession(db, makeSession({ id: 'parent', toolCalls: [], filesTouched: [] }));
+    writeSession(
+      db,
+      makeSession({
+        id: 'agent-x',
+        parentSessionId: 'parent',
+        toolCalls: [{ id: 'r', sequenceNum: 0, toolName: 'Edit', calledAt: null, success: true, filePath: '/repo/auth.ts', command: null, errorText: null }],
+        filesTouched: [{ filePath: '/repo/auth.ts', readCount: 0, writeCount: 0, editCount: 1 }],
+      })
+    );
+    const rows = sessionsByFile(db, 'auth.ts');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('parent'); // not the sub-agent
     db.close();
   });
 });

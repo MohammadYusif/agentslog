@@ -3,7 +3,7 @@
  */
 import chalk from 'chalk';
 import { openDb } from '../../db/index.js';
-import { listSessions, type SessionRow } from '../../db/queries.js';
+import { listSessions, type SessionRollupRow } from '../../db/queries.js';
 import { windowCutoffIso, relativeTime } from '../../utils/time.js';
 import {
   renderTable,
@@ -49,17 +49,25 @@ export function runSessions(options: SessionsOptions = {}): void {
     { header: 'MODEL', width: 12 },
     { header: 'STARTED', width: 10, align: 'right' },
     { header: 'TOKENS', width: 8, align: 'right' },
+    { header: 'SUB', width: 4, align: 'right' },
   ];
 
-  const tableRows = rows.map((s: SessionRow) => [
+  const tableRows = rows.map((s: SessionRollupRow) => [
     s.id.slice(0, 8),
     s.ai_title ?? chalk.dim('(untitled)'),
     projectLabel(s.project_path, s.project_hash),
     shortModel(s.model),
     relativeTime(s.started_at),
-    abbreviateNumber(s.input_tokens + s.output_tokens),
+    abbreviateNumber(s.rollup_input_tokens + s.rollup_output_tokens),
+    s.subagent_count > 0 ? chalk.magenta(`+${s.subagent_count}`) : chalk.dim('–'),
   ]);
 
   process.stdout.write(renderTable(columns, tableRows) + '\n');
-  process.stdout.write(chalk.dim(`\n${rows.length} session(s)\n`));
+
+  const withSub = rows.filter((s) => s.subagent_count > 0).length;
+  const footer =
+    withSub > 0
+      ? `${rows.length} session(s) · TOKENS and SUB include sub-agent activity`
+      : `${rows.length} session(s)`;
+  process.stdout.write(chalk.dim(`\n${footer}\n`));
 }

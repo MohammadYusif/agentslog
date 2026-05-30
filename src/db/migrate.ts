@@ -4,13 +4,32 @@
 import type Database from 'better-sqlite3';
 import { SCHEMA_SQL, SCHEMA_VERSION } from './schema.js';
 
+/** True if `table` already has a column named `column`. */
+function hasColumn(db: Database.Database, table: string, column: string): boolean {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return cols.some((c) => c.name === column);
+}
+
 /**
  * Ensure the database schema exists and is at the current version.
  *
  * Idempotent: safe to call on every startup. Creates all tables/indexes if
- * missing and records the schema version exactly once.
+ * missing, applies in-place column migrations for older databases, and records
+ * the schema version exactly once.
  */
 export function migrate(db: Database.Database): void {
+  // CREATE TABLE IF NOT EXISTS only builds fresh databases; for an existing
+  // database the new v2 columns must be added explicitly before running the
+  // rest of SCHEMA_SQL (which also creates the new indexes referencing them).
+  if (tableExists(db, 'sessions')) {
+    if (!hasColumn(db, 'sessions', 'parent_session_id')) {
+      db.exec('ALTER TABLE sessions ADD COLUMN parent_session_id TEXT');
+    }
+    if (!hasColumn(db, 'sessions', 'source')) {
+      db.exec("ALTER TABLE sessions ADD COLUMN source TEXT NOT NULL DEFAULT 'claude-code'");
+    }
+  }
+
   db.exec(SCHEMA_SQL);
 
   const row = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as
@@ -23,7 +42,14 @@ export function migrate(db: Database.Database): void {
   }
 
   if (row.version < SCHEMA_VERSION) {
-    // Future migrations would run here, stepping version -> SCHEMA_VERSION.
     db.prepare('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);
   }
+}
+
+/** True if a table with the given name exists. */
+function tableExists(db: Database.Database, name: string): boolean {
+  const row = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?")
+    .get(name);
+  return row != null;
 }
