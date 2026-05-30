@@ -13,6 +13,7 @@ import { runQuery } from './commands/query.js';
 import { runStats } from './commands/stats.js';
 import { runShow } from './commands/show.js';
 import { runDiff } from './commands/diff.js';
+import { runErrors } from './commands/errors.js';
 import { runWatch } from './commands/watch.js';
 
 const program = new Command();
@@ -51,6 +52,18 @@ program
   .option('--json', 'output raw JSON')
   .action((opts) => {
     runQuery(opts);
+  });
+
+program
+  .command('errors')
+  .description('List recent failed tool calls across sessions')
+  .option('--last <window>', 'restrict to a time window, e.g. 7d')
+  .option('--project <path>', 'filter by project path or hash substring')
+  .option('--tool <name>', 'only failures from this tool (e.g. Bash)')
+  .option('--limit <n>', 'maximum failures to show (default 20)')
+  .option('--json', 'output raw JSON')
+  .action((opts) => {
+    runErrors(opts);
   });
 
 program

@@ -11,6 +11,7 @@ import {
   resolveSession,
   toolCallsForSession,
   childSessions,
+  recentErrors,
 } from '../src/db/queries.js';
 import type { ParsedSession } from '../src/parser/types.js';
 
@@ -185,6 +186,48 @@ describe('sub-agent rollup', () => {
     writeSession(db, makeSession({ id: 'agent-2', parentSessionId: 'parent', toolCalls: [], filesTouched: [] }));
     const kids = childSessions(db, 'parent');
     expect(kids.map((k) => k.id).sort()).toEqual(['agent-1', 'agent-2']);
+    db.close();
+  });
+
+  it('lists recent errors and attributes a sub-agent failure to its parent', () => {
+    const db = openDb(dbFile);
+    writeSession(db, makeSession({ id: 'parent', toolCalls: [], filesTouched: [], errorCount: 0 }));
+    writeSession(
+      db,
+      makeSession({
+        id: 'agent-x',
+        parentSessionId: 'parent',
+        errorCount: 1,
+        toolCalls: [
+          { id: 'boom', sequenceNum: 0, toolName: 'Bash', calledAt: '2026-01-05T00:05:00Z', success: false, filePath: null, command: 'npm run build', errorText: 'Exit 1: nope' },
+        ],
+        filesTouched: [],
+      })
+    );
+    const errs = recentErrors(db, {});
+    expect(errs).toHaveLength(1);
+    expect(errs[0].tool_name).toBe('Bash');
+    expect(errs[0].command).toBe('npm run build');
+    expect(errs[0].top_session_id).toBe('parent'); // attributed to the parent
+    db.close();
+  });
+
+  it('filters errors by tool name', () => {
+    const db = openDb(dbFile);
+    writeSession(
+      db,
+      makeSession({
+        id: 's',
+        toolCalls: [
+          { id: '1', sequenceNum: 0, toolName: 'Bash', calledAt: '2026-01-05T00:00:00Z', success: false, filePath: null, command: 'x', errorText: 'e' },
+          { id: '2', sequenceNum: 1, toolName: 'Read', calledAt: '2026-01-05T00:01:00Z', success: false, filePath: '/a', command: null, errorText: 'e' },
+        ],
+        filesTouched: [],
+      })
+    );
+    expect(recentErrors(db, { tool: 'bash' })).toHaveLength(1);
+    expect(recentErrors(db, { tool: 'Read' })).toHaveLength(1);
+    expect(recentErrors(db, {})).toHaveLength(2);
     db.close();
   });
 

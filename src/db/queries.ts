@@ -337,3 +337,62 @@ export function sessionCount(db: Database.Database): number {
   const row = db.prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number };
   return row.n;
 }
+
+export interface ErrorRow {
+  /** Session that actually ran the failing tool (may be a sub-agent). */
+  session_id: string;
+  /** Top-level session for display/grouping. */
+  top_session_id: string;
+  top_title: string | null;
+  project_path: string | null;
+  project_hash: string;
+  tool_name: string;
+  file_path: string | null;
+  command: string | null;
+  error_text: string | null;
+  called_at: string | null;
+}
+
+export interface ErrorFilters {
+  sinceIso?: string | null;
+  project?: string | null;
+  tool?: string | null;
+  limit?: number | null;
+}
+
+/**
+ * Most recent failed tool calls across all sessions, newest first. Each row is
+ * attributed to its top-level session (sub-agent failures surface the parent)
+ * so a failure is always actionable.
+ */
+export function recentErrors(db: Database.Database, filters: ErrorFilters = {}): ErrorRow[] {
+  const clauses: string[] = ['t.success = 0'];
+  const params: Record<string, unknown> = {};
+
+  if (filters.sinceIso) {
+    clauses.push('top.started_at >= @since');
+    params.since = filters.sinceIso;
+  }
+  if (filters.project) {
+    clauses.push('(top.project_path LIKE @proj OR top.project_hash LIKE @proj)');
+    params.proj = `%${filters.project}%`;
+  }
+  if (filters.tool) {
+    clauses.push('t.tool_name = @tool COLLATE NOCASE');
+    params.tool = filters.tool;
+  }
+
+  const limit = filters.limit && filters.limit > 0 ? Math.floor(filters.limit) : 20;
+  const sql = `
+    SELECT t.session_id, t.tool_name, t.file_path, t.command, t.error_text, t.called_at,
+           top.id AS top_session_id, top.ai_title AS top_title,
+           top.project_path, top.project_hash
+    FROM tool_calls t
+    JOIN sessions s   ON s.id = t.session_id
+    JOIN sessions top ON top.id = COALESCE(s.parent_session_id, s.id)
+    WHERE ${clauses.join(' AND ')}
+    ORDER BY t.called_at DESC
+    LIMIT ${limit}
+  `;
+  return db.prepare(sql).all(params) as ErrorRow[];
+}
