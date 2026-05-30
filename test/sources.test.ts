@@ -130,6 +130,49 @@ describe('Cline adapter', () => {
     expect(s.filesTouched.find((f) => f.filePath === 'docs/details.md')!.readCount).toBe(1);
   });
 
+  it('ignores unknown 2026 say types (reasoning, checkpoint_created) and keeps tokens exact', () => {
+    // Cline 2026 added say:"reasoning" and say:"checkpoint_created"; they carry
+    // no indexable activity and must not break parsing or inflate counts.
+    const dir = tmp();
+    const taskDir = path.join(dir, '1775804723538');
+    fs.mkdirSync(taskDir);
+    const ui = [
+      { ts: 1775804723538, type: 'say', say: 'task', text: 'Command to create an ssh key' },
+      { ts: 1775804724000, type: 'say', say: 'reasoning', text: 'thinking about ssh-keygen…' },
+      { ts: 1775804725000, type: 'say', say: 'checkpoint_created', text: 'abc123' },
+      { ts: 1775804726000, type: 'say', say: 'api_req_started', text: JSON.stringify({ tokensIn: 20, tokensOut: 5 }) },
+      { ts: 1775804727000, type: 'say', say: 'text', text: 'Run ssh-keygen -t ed25519' },
+    ];
+    fs.writeFileSync(path.join(taskDir, 'ui_messages.json'), JSON.stringify(ui), 'utf-8');
+    const s = parseClineTask(taskDir)!;
+    expect(s.aiTitle).toBe('Command to create an ssh key');
+    expect(s.inputTokens).toBe(20);
+    expect(s.toolCalls).toHaveLength(0); // reasoning/checkpoint are not tools
+    expect(s.userTurnCount).toBe(1); // only the task counts
+  });
+
+  it('aider: extracts the model from a "Model: X with <edit> format" line (v0.86)', () => {
+    const dir = tmp();
+    const file = path.join(dir, '.aider.chat.history.md');
+    fs.writeFileSync(
+      file,
+      [
+        '# aider chat started at 2026-02-28 14:27:18',
+        '> Aider v0.86.2',
+        '> Model: openrouter/qwen/qwen3-coder-next with whole edit format',
+        '',
+        '#### make it faster',
+        '> Tokens: 11k sent, 85 received. Cost: $0.0019 message, $0.0019 session.',
+        '',
+      ].join('\n'),
+      'utf-8'
+    );
+    const [s] = parseAiderHistory(file);
+    expect(s.model).toBe('openrouter/qwen/qwen3-coder-next');
+    expect(s.inputTokens).toBe(11000);
+    expect(s.outputTokens).toBe(85);
+  });
+
   it('returns null when ui_messages.json is missing or empty', () => {
     const dir = tmp();
     const taskDir = path.join(dir, 'empty');
