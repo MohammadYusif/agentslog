@@ -7,9 +7,9 @@
  */
 import chalk from 'chalk';
 import { openDb } from '../../db/index.js';
-import { recentErrors, type ErrorRow } from '../../db/queries.js';
-import { windowCutoffIso, relativeTime } from '../../utils/time.js';
-import { truncate, projectLabel } from '../../utils/format.js';
+import { type ErrorRow, recentErrors } from '../../db/queries.js';
+import { projectLabel, truncate } from '../../utils/format.js';
+import { relativeTime, windowCutoffIso } from '../../utils/time.js';
 
 export interface ErrorsOptions {
   last?: string;
@@ -33,7 +33,7 @@ export function runErrors(options: ErrorsOptions = {}): void {
   });
 
   if (options.json) {
-    process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
+    process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
     return;
   }
 
@@ -44,7 +44,7 @@ export function runErrors(options: ErrorsOptions = {}): void {
 
   const scope = options.last ? `last ${options.last}` : 'all time';
   process.stdout.write(
-    chalk.dim(`Recent tool-call failures (${scope}) — showing ${rows.length}\n\n`)
+    chalk.dim(`Recent tool-call failures (${scope}) — showing ${rows.length}\n\n`),
   );
 
   for (const e of rows) {
@@ -52,9 +52,7 @@ export function runErrors(options: ErrorsOptions = {}): void {
     const project = projectLabel(e.project_path, e.project_hash);
     // Header line: ✗ Tool · project · when
     process.stdout.write(
-      `${chalk.red('✗')} ${chalk.bold(e.tool_name)} ` +
-        chalk.dim(`· ${project} · ${when}`) +
-        '\n'
+      `${chalk.red('✗')} ${chalk.bold(e.tool_name)} ${chalk.dim(`· ${project} · ${when}`)}\n`,
     );
 
     // Context line: the file or command that failed.

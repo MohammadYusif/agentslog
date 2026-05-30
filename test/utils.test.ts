@@ -1,6 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { parseWindow, windowCutoffIso, relativeTime, formatDuration } from '../src/utils/time.js';
-import { abbreviateNumber, withCommas, truncate, padTo, shortModel, projectLabel } from '../src/utils/format.js';
+import { describe, expect, it } from 'vitest';
+import {
+  abbreviateNumber,
+  padTo,
+  projectLabel,
+  shortModel,
+  truncate,
+  withCommas,
+} from '../src/utils/format.js';
+import { formatDuration, parseWindow, relativeTime, windowCutoffIso } from '../src/utils/time.js';
 
 describe('parseWindow', () => {
   it('parses days/hours/weeks', () => {
@@ -84,7 +91,9 @@ describe('shortModel', () => {
 
 describe('projectLabel', () => {
   it('uses basename of the path when present', () => {
-    expect(projectLabel('C:\\Users\\x\\Desktop\\githubmaxxing', 'c--Users-x-Desktop-githubmaxxing')).toBe('githubmaxxing');
+    expect(
+      projectLabel('C:\\Users\\x\\Desktop\\githubmaxxing', 'c--Users-x-Desktop-githubmaxxing'),
+    ).toBe('githubmaxxing');
   });
   it('falls back to last hash segment', () => {
     expect(projectLabel(null, 'c--Users-x-Desktop-pointly')).toBe('pointly');

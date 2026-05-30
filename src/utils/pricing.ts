@@ -97,7 +97,7 @@ export function resetPricingCache(): void {
 /** Find the price entry for a model id, or null if no rule matches. */
 export function priceForModel(
   model: string | null | undefined,
-  table = loadPricing()
+  table = loadPricing(),
 ): ModelPrice | null {
   if (!model) return null;
   const m = model.toLowerCase();
@@ -117,7 +117,7 @@ export function priceForModel(
 export function estimateCost(
   model: string | null | undefined,
   tokens: TokenCounts,
-  table = loadPricing()
+  table = loadPricing(),
 ): number | null {
   const price = priceForModel(model, table);
   if (!price) return null;

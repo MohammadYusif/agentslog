@@ -1,17 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { openDb, writeSession, closeDb } from '../src/db/index.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { openDb, writeSession } from '../src/db/index.js';
 import {
+  childSessions,
   listSessions,
+  recentErrors,
+  resolveSession,
   sessionsByFile,
   sessionsByTool,
   statsTotals,
-  resolveSession,
   toolCallsForSession,
-  childSessions,
-  recentErrors,
 } from '../src/db/queries.js';
 import type { ParsedSession } from '../src/parser/types.js';
 
@@ -39,12 +39,28 @@ function makeSession(overrides: Partial<ParsedSession> = {}): ParsedSession {
     userTurnCount: 3,
     rawPath: 'C:/proj/.jsonl',
     toolCalls: [
-      { id: 'a', sequenceNum: 0, toolName: 'Read', calledAt: null, success: true, filePath: '/repo/CLAUDE.md', command: null, errorText: null },
-      { id: 'b', sequenceNum: 1, toolName: 'Bash', calledAt: null, success: false, filePath: null, command: 'ls', errorText: 'boom' },
+      {
+        id: 'a',
+        sequenceNum: 0,
+        toolName: 'Read',
+        calledAt: null,
+        success: true,
+        filePath: '/repo/CLAUDE.md',
+        command: null,
+        errorText: null,
+      },
+      {
+        id: 'b',
+        sequenceNum: 1,
+        toolName: 'Bash',
+        calledAt: null,
+        success: false,
+        filePath: null,
+        command: 'ls',
+        errorText: 'boom',
+      },
     ],
-    filesTouched: [
-      { filePath: '/repo/CLAUDE.md', readCount: 1, writeCount: 0, editCount: 0 },
-    ],
+    filesTouched: [{ filePath: '/repo/CLAUDE.md', readCount: 1, writeCount: 0, editCount: 0 }],
     ...overrides,
   };
 }
@@ -105,7 +121,16 @@ describe('db write + query', () => {
   it('aggregates stats totals', () => {
     const db = openDb(dbFile);
     writeSession(db, makeSession());
-    writeSession(db, makeSession({ id: 'sess-2222', inputTokens: 500, outputTokens: 100, toolCallCount: 1, errorCount: 0 }));
+    writeSession(
+      db,
+      makeSession({
+        id: 'sess-2222',
+        inputTokens: 500,
+        outputTokens: 100,
+        toolCallCount: 1,
+        errorCount: 0,
+      }),
+    );
     const totals = statsTotals(db);
     expect(totals.session_count).toBe(2);
     expect(totals.input_tokens).toBe(1500);
@@ -138,7 +163,16 @@ describe('db write + query', () => {
 describe('sub-agent rollup', () => {
   it('lists only top-level sessions and rolls child tokens/tools into the parent', () => {
     const db = openDb(dbFile);
-    writeSession(db, makeSession({ id: 'parent', inputTokens: 1000, outputTokens: 200, toolCallCount: 2, errorCount: 1 }));
+    writeSession(
+      db,
+      makeSession({
+        id: 'parent',
+        inputTokens: 1000,
+        outputTokens: 200,
+        toolCallCount: 2,
+        errorCount: 1,
+      }),
+    );
     writeSession(
       db,
       makeSession({
@@ -150,7 +184,7 @@ describe('sub-agent rollup', () => {
         errorCount: 2,
         toolCalls: [],
         filesTouched: [],
-      })
+      }),
     );
 
     const rows = listSessions(db);
@@ -167,8 +201,29 @@ describe('sub-agent rollup', () => {
 
   it('counts top-level sessions but sums tokens across sub-agents in stats', () => {
     const db = openDb(dbFile);
-    writeSession(db, makeSession({ id: 'parent', inputTokens: 1000, outputTokens: 200, toolCallCount: 2, errorCount: 1 }));
-    writeSession(db, makeSession({ id: 'agent-aaa', parentSessionId: 'parent', inputTokens: 500, outputTokens: 100, toolCallCount: 3, errorCount: 2, toolCalls: [], filesTouched: [] }));
+    writeSession(
+      db,
+      makeSession({
+        id: 'parent',
+        inputTokens: 1000,
+        outputTokens: 200,
+        toolCallCount: 2,
+        errorCount: 1,
+      }),
+    );
+    writeSession(
+      db,
+      makeSession({
+        id: 'agent-aaa',
+        parentSessionId: 'parent',
+        inputTokens: 500,
+        outputTokens: 100,
+        toolCallCount: 3,
+        errorCount: 2,
+        toolCalls: [],
+        filesTouched: [],
+      }),
+    );
 
     const totals = statsTotals(db);
     expect(totals.session_count).toBe(1); // top-level only
@@ -179,11 +234,17 @@ describe('sub-agent rollup', () => {
     db.close();
   });
 
-  it('childSessions returns a parent\'s sub-agents', () => {
+  it("childSessions returns a parent's sub-agents", () => {
     const db = openDb(dbFile);
     writeSession(db, makeSession({ id: 'parent' }));
-    writeSession(db, makeSession({ id: 'agent-1', parentSessionId: 'parent', toolCalls: [], filesTouched: [] }));
-    writeSession(db, makeSession({ id: 'agent-2', parentSessionId: 'parent', toolCalls: [], filesTouched: [] }));
+    writeSession(
+      db,
+      makeSession({ id: 'agent-1', parentSessionId: 'parent', toolCalls: [], filesTouched: [] }),
+    );
+    writeSession(
+      db,
+      makeSession({ id: 'agent-2', parentSessionId: 'parent', toolCalls: [], filesTouched: [] }),
+    );
     const kids = childSessions(db, 'parent');
     expect(kids.map((k) => k.id).sort()).toEqual(['agent-1', 'agent-2']);
     db.close();
@@ -199,10 +260,19 @@ describe('sub-agent rollup', () => {
         parentSessionId: 'parent',
         errorCount: 1,
         toolCalls: [
-          { id: 'boom', sequenceNum: 0, toolName: 'Bash', calledAt: '2026-01-05T00:05:00Z', success: false, filePath: null, command: 'npm run build', errorText: 'Exit 1: nope' },
+          {
+            id: 'boom',
+            sequenceNum: 0,
+            toolName: 'Bash',
+            calledAt: '2026-01-05T00:05:00Z',
+            success: false,
+            filePath: null,
+            command: 'npm run build',
+            errorText: 'Exit 1: nope',
+          },
         ],
         filesTouched: [],
-      })
+      }),
     );
     const errs = recentErrors(db, {});
     expect(errs).toHaveLength(1);
@@ -219,11 +289,29 @@ describe('sub-agent rollup', () => {
       makeSession({
         id: 's',
         toolCalls: [
-          { id: '1', sequenceNum: 0, toolName: 'Bash', calledAt: '2026-01-05T00:00:00Z', success: false, filePath: null, command: 'x', errorText: 'e' },
-          { id: '2', sequenceNum: 1, toolName: 'Read', calledAt: '2026-01-05T00:01:00Z', success: false, filePath: '/a', command: null, errorText: 'e' },
+          {
+            id: '1',
+            sequenceNum: 0,
+            toolName: 'Bash',
+            calledAt: '2026-01-05T00:00:00Z',
+            success: false,
+            filePath: null,
+            command: 'x',
+            errorText: 'e',
+          },
+          {
+            id: '2',
+            sequenceNum: 1,
+            toolName: 'Read',
+            calledAt: '2026-01-05T00:01:00Z',
+            success: false,
+            filePath: '/a',
+            command: null,
+            errorText: 'e',
+          },
         ],
         filesTouched: [],
-      })
+      }),
     );
     expect(recentErrors(db, { tool: 'bash' })).toHaveLength(1);
     expect(recentErrors(db, { tool: 'Read' })).toHaveLength(1);
@@ -239,9 +327,20 @@ describe('sub-agent rollup', () => {
       makeSession({
         id: 'agent-x',
         parentSessionId: 'parent',
-        toolCalls: [{ id: 'r', sequenceNum: 0, toolName: 'Edit', calledAt: null, success: true, filePath: '/repo/auth.ts', command: null, errorText: null }],
+        toolCalls: [
+          {
+            id: 'r',
+            sequenceNum: 0,
+            toolName: 'Edit',
+            calledAt: null,
+            success: true,
+            filePath: '/repo/auth.ts',
+            command: null,
+            errorText: null,
+          },
+        ],
         filesTouched: [{ filePath: '/repo/auth.ts', readCount: 0, writeCount: 0, editCount: 1 }],
-      })
+      }),
     );
     const rows = sessionsByFile(db, 'auth.ts');
     expect(rows).toHaveLength(1);

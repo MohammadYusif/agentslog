@@ -3,15 +3,16 @@
  * Claude Code adapter is always present, the experimental ones activate only
  * when their data location exists or is configured.
  */
+
+import { aiderAdapter } from './aider.js';
 import { claudeCodeAdapter } from './claude-code.js';
 import { clineAdapter } from './cline.js';
-import { aiderAdapter } from './aider.js';
 import type { SourceAdapter } from './types.js';
 
-export type { SourceAdapter, DiscoveredUnit } from './types.js';
+export { aiderAdapter, parseAiderHistory } from './aider.js';
 export { claudeCodeAdapter } from './claude-code.js';
 export { clineAdapter, parseClineTask } from './cline.js';
-export { aiderAdapter, parseAiderHistory } from './aider.js';
+export type { DiscoveredUnit, SourceAdapter } from './types.js';
 
 /** All registered adapters, primary source first. */
 export const ALL_ADAPTERS: SourceAdapter[] = [claudeCodeAdapter, clineAdapter, aiderAdapter];

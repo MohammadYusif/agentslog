@@ -31,7 +31,12 @@
   "scripts": {
     "build": "tsup src/cli/index.ts --format esm --target node20 --out-dir dist --clean",
     "dev": "tsup src/cli/index.ts --format esm --watch",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint src test",
+    "format": "biome format --write src test",
+    "check": "biome check src test",
+    "check:fix": "biome check --write src test"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0",
@@ -41,10 +46,12 @@
     "env-paths": "^3.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.16",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.17.57",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.3"
-  }
+  },
+  "packageManager": "pnpm@9.15.4"
 }

@@ -14,8 +14,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { clineTasksDir } from '../../utils/paths.js';
 import { normalizePath } from '../claude-code.js';
-import type { ParsedSession, ParsedToolCall, ParsedFileTouched } from '../types.js';
-import type { SourceAdapter, DiscoveredUnit } from './types.js';
+import type { ParsedFileTouched, ParsedSession, ParsedToolCall } from '../types.js';
+import type { DiscoveredUnit, SourceAdapter } from './types.js';
 
 interface ClineUiMessage {
   ts?: number;
@@ -36,9 +36,7 @@ function tryParse<T>(s: string | undefined): T | null {
 }
 
 /** Map a Cline `tool` say-message to a (toolName, file, kind) triple. */
-function mapClineTool(
-  tool: string
-): { name: string; kind: 'read' | 'write' | 'edit' | null } {
+function mapClineTool(tool: string): { name: string; kind: 'read' | 'write' | 'edit' | null } {
   switch (tool) {
     case 'readFile':
       return { name: 'read_file', kind: 'read' };
@@ -293,11 +291,10 @@ export function parseClineTask(taskDir: string): ParsedSession | null {
       errorCount++;
       // Attribute to the most recent tool call when possible.
       const last = toolCalls[toolCalls.length - 1];
-      if (last && last.success) {
+      if (last?.success) {
         last.success = false;
         last.errorText = (m.text ?? '').replace(/\s+/g, ' ').slice(0, 2000);
       }
-      continue;
     }
   }
 

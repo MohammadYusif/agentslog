@@ -4,16 +4,17 @@
  * Reads the file line-by-line (never loading the whole file into memory),
  * tolerates corrupt lines, and produces a normalized {@link ParsedSession}.
  */
+
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { randomUUID } from 'node:crypto';
 import type {
-  RawEvent,
   ContentBlock,
+  ParsedFileTouched,
   ParsedSession,
   ParsedToolCall,
-  ParsedFileTouched,
+  RawEvent,
 } from './types.js';
 
 /** Tools whose file path is found at input.file_path. */
@@ -50,7 +51,10 @@ function stringifyResultContent(content: unknown): string {
 }
 
 /** Extract the file path for a tool_use block, or null for command/other tools. */
-function extractFilePath(toolName: string, input: Record<string, unknown> | undefined): string | null {
+function extractFilePath(
+  toolName: string,
+  input: Record<string, unknown> | undefined,
+): string | null {
   if (!input) return null;
   if (FILE_PATH_TOOLS.has(toolName)) {
     const fp = input.file_path;
@@ -64,7 +68,10 @@ function extractFilePath(toolName: string, input: Record<string, unknown> | unde
 }
 
 /** Extract the (truncated) command string for shell tools, else null. */
-function extractCommand(toolName: string, input: Record<string, unknown> | undefined): string | null {
+function extractCommand(
+  toolName: string,
+  input: Record<string, unknown> | undefined,
+): string | null {
   if (!input || !COMMAND_TOOLS.has(toolName)) return null;
   const cmd = input.command;
   if (typeof cmd !== 'string') return null;
@@ -81,7 +88,7 @@ function extractCommand(toolName: string, input: Record<string, unknown> | undef
  */
 export async function parseSessionFile(
   filePath: string,
-  projectHash: string
+  projectHash: string,
 ): Promise<ParsedSession | null> {
   const stream = fs.createReadStream(filePath, { encoding: 'utf-8' });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -243,13 +250,16 @@ export async function parseSessionFile(
               bumpFile(filePath2, 'read');
             } else if (toolName === 'Write') {
               bumpFile(filePath2, 'write');
-            } else if (toolName === 'Edit' || toolName === 'MultiEdit' || toolName === 'NotebookEdit') {
+            } else if (
+              toolName === 'Edit' ||
+              toolName === 'MultiEdit' ||
+              toolName === 'NotebookEdit'
+            ) {
               bumpFile(filePath2, 'edit');
             }
           }
         }
       }
-      continue;
     }
 
     // All other event types (queue-operation, attachment, system, mode,

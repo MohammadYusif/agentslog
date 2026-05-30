@@ -1,12 +1,13 @@
 /**
  * chokidar-based watcher that re-ingests transcripts as they change.
  */
-import chokidar from 'chokidar';
-import chalk from 'chalk';
+
 import type Database from 'better-sqlite3';
-import { claudeProjectsDir } from '../utils/paths.js';
-import { parseSessionFile, projectHashForFile } from '../parser/index.js';
+import chalk from 'chalk';
+import chokidar from 'chokidar';
 import { writeSession } from '../db/index.js';
+import { parseSessionFile, projectHashForFile } from '../parser/index.js';
+import { claudeProjectsDir } from '../utils/paths.js';
 import { relativeTime } from '../utils/time.js';
 
 export interface WatchOptions {
@@ -25,7 +26,10 @@ export interface WatchOptions {
  * as a session progresses, so we wait for writes to settle before re-parsing
  * the whole file (parsing is idempotent via INSERT OR REPLACE + delete/insert).
  */
-export function startWatcher(db: Database.Database, options: WatchOptions = {}): () => Promise<void> {
+export function startWatcher(
+  db: Database.Database,
+  options: WatchOptions = {},
+): () => Promise<void> {
   const projectsDir = options.projectsDir ?? claudeProjectsDir();
   const debounceMs = options.debounceMs ?? 750;
 
@@ -52,7 +56,7 @@ export function startWatcher(db: Database.Database, options: WatchOptions = {}):
       const title = session.aiTitle ?? '(untitled)';
       process.stdout.write(
         `${chalk.green('●')} ingested ${chalk.bold(session.id.slice(0, 8))} ` +
-          `${chalk.dim(title)} ${chalk.dim(`[${when}]`)}\n`
+          `${chalk.dim(title)} ${chalk.dim(`[${when}]`)}\n`,
       );
       options.onIngest?.(filePath);
     } catch (err) {
@@ -76,7 +80,7 @@ export function startWatcher(db: Database.Database, options: WatchOptions = {}):
     .on('change', scheduleIngest)
     .on('ready', () => {
       process.stdout.write(
-        `${chalk.cyan('watching')} ${chalk.dim(projectsDir)} ${chalk.dim('(Ctrl+C to stop)')}\n`
+        `${chalk.cyan('watching')} ${chalk.dim(projectsDir)} ${chalk.dim('(Ctrl+C to stop)')}\n`,
       );
     })
     .on('error', (err) => {

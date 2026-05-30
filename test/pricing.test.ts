@@ -1,10 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import {
-  estimateCost,
-  priceForModel,
-  formatCost,
-  loadPricing,
-} from '../src/utils/pricing.js';
+import { describe, expect, it } from 'vitest';
+import { estimateCost, formatCost, loadPricing, priceForModel } from '../src/utils/pricing.js';
 
 describe('pricing', () => {
   it('matches a model id to its price by substring', () => {
@@ -15,7 +10,14 @@ describe('pricing', () => {
 
   it('returns null for an unknown model', () => {
     expect(priceForModel('gpt-4o')).toBeNull();
-    expect(estimateCost('gpt-4o', { inputTokens: 1000, outputTokens: 1000, cacheReadTokens: 0, cacheCreationTokens: 0 })).toBeNull();
+    expect(
+      estimateCost('gpt-4o', {
+        inputTokens: 1000,
+        outputTokens: 1000,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      }),
+    ).toBeNull();
   });
 
   it('computes cost across all four token buckets', () => {
@@ -30,7 +32,10 @@ describe('pricing', () => {
   });
 
   it('prefers the longest matching pricing key', () => {
-    const table = { ...loadPricing(), 'opus-4-8': { input: 99, output: 1, cacheRead: 0, cacheWrite: 0 } };
+    const table = {
+      ...loadPricing(),
+      'opus-4-8': { input: 99, output: 1, cacheRead: 0, cacheWrite: 0 },
+    };
     expect(priceForModel('claude-opus-4-8', table)!.input).toBe(99);
   });
 

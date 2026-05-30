@@ -4,14 +4,14 @@
 import chalk from 'chalk';
 import { openDb } from '../../db/index.js';
 import { listSessions, type SessionRollupRow } from '../../db/queries.js';
-import { windowCutoffIso, relativeTime } from '../../utils/time.js';
 import {
-  renderTable,
   abbreviateNumber,
-  projectLabel,
-  shortModel,
   type Column,
+  projectLabel,
+  renderTable,
+  shortModel,
 } from '../../utils/format.js';
+import { relativeTime, windowCutoffIso } from '../../utils/time.js';
 
 export interface SessionsOptions {
   last?: string;
@@ -35,7 +35,7 @@ export function runSessions(options: SessionsOptions = {}): void {
   });
 
   if (options.json) {
-    process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
+    process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
     return;
   }
 
@@ -69,10 +69,10 @@ export function runSessions(options: SessionsOptions = {}): void {
       relativeTime(s.started_at),
       abbreviateNumber(s.rollup_input_tokens + s.rollup_output_tokens),
       s.subagent_count > 0 ? chalk.magenta(`+${s.subagent_count}`) : chalk.dim('–'),
-    ].filter((c): c is string => c !== null)
+    ].filter((c): c is string => c !== null),
   );
 
-  process.stdout.write(renderTable(columns, tableRows) + '\n');
+  process.stdout.write(`${renderTable(columns, tableRows)}\n`);
 
   const withSub = rows.filter((s) => s.subagent_count > 0).length;
   const footer =

@@ -3,15 +3,15 @@
  */
 import chalk from 'chalk';
 import { openDb } from '../../db/index.js';
-import { sessionsByFile, sessionsByTool, type SessionRow } from '../../db/queries.js';
-import { windowCutoffIso, relativeTime } from '../../utils/time.js';
+import { type SessionRow, sessionsByFile, sessionsByTool } from '../../db/queries.js';
 import {
-  renderTable,
   abbreviateNumber,
-  projectLabel,
-  shortModel,
   type Column,
+  projectLabel,
+  renderTable,
+  shortModel,
 } from '../../utils/format.js';
+import { relativeTime, windowCutoffIso } from '../../utils/time.js';
 
 export interface QueryOptions {
   file?: string;
@@ -42,7 +42,7 @@ export function runQuery(options: QueryOptions = {}): void {
   }
 
   if (options.json) {
-    process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
+    process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
     return;
   }
 
@@ -70,6 +70,6 @@ export function runQuery(options: QueryOptions = {}): void {
   ]);
 
   process.stdout.write(chalk.dim(`${heading}\n\n`));
-  process.stdout.write(renderTable(columns, tableRows) + '\n');
+  process.stdout.write(`${renderTable(columns, tableRows)}\n`);
   process.stdout.write(chalk.dim(`\n${rows.length} session(s)\n`));
 }

@@ -163,7 +163,7 @@ export function filesForSession(db: Database.Database, sessionId: string): FileT
   return db
     .prepare(
       `SELECT * FROM files_touched WHERE session_id = ?
-       ORDER BY (read_count + write_count + edit_count) DESC, file_path ASC`
+       ORDER BY (read_count + write_count + edit_count) DESC, file_path ASC`,
     )
     .all(sessionId) as FileTouchedRow[];
 }
@@ -175,7 +175,7 @@ export function filesForSession(db: Database.Database, sessionId: string): FileT
 export function sessionsByFile(
   db: Database.Database,
   file: string,
-  sinceIso?: string | null
+  sinceIso?: string | null,
 ): SessionRow[] {
   const norm = normalizePath(file);
   const base = norm.split('/').pop() ?? norm;
@@ -207,7 +207,7 @@ export function sessionsByFile(
 export function sessionsByTool(
   db: Database.Database,
   tool: string,
-  sinceIso?: string | null
+  sinceIso?: string | null,
 ): SessionRow[] {
   const params: Record<string, unknown> = { tool };
   let timeClause = '';
@@ -260,7 +260,7 @@ export function statsTotals(db: Database.Database, sinceIso?: string | null): St
          COALESCE(SUM(cache_creation_tokens),0) AS cache_creation_tokens,
          COALESCE(SUM(tool_call_count),0)  AS tool_calls,
          COALESCE(SUM(error_count),0)      AS errors
-       FROM sessions ${where}`
+       FROM sessions ${where}`,
     )
     .get(sinceIso ? { since: sinceIso } : {}) as StatsTotals;
   return row;

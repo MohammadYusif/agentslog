@@ -1,9 +1,9 @@
-import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseClineTask } from '../src/parser/sources/cline.js';
+import { afterEach, describe, expect, it } from 'vitest';
 import { parseAiderHistory } from '../src/parser/sources/aider.js';
+import { parseClineTask } from '../src/parser/sources/cline.js';
 
 let tmpDirs: string[] = [];
 function tmp(): string {
@@ -27,10 +27,26 @@ describe('Cline adapter', () => {
         ts: 1699900001000,
         type: 'say',
         say: 'api_req_started',
-        text: JSON.stringify({ tokensIn: 1200, tokensOut: 300, cacheReads: 50, cacheWrites: 20, cwd: 'C:\\repo' }),
+        text: JSON.stringify({
+          tokensIn: 1200,
+          tokensOut: 300,
+          cacheReads: 50,
+          cacheWrites: 20,
+          cwd: 'C:\\repo',
+        }),
       },
-      { ts: 1699900002000, type: 'say', say: 'tool', text: JSON.stringify({ tool: 'readFile', path: 'src/auth.ts' }) },
-      { ts: 1699900003000, type: 'say', say: 'tool', text: JSON.stringify({ tool: 'editedExistingFile', path: 'src/auth.ts' }) },
+      {
+        ts: 1699900002000,
+        type: 'say',
+        say: 'tool',
+        text: JSON.stringify({ tool: 'readFile', path: 'src/auth.ts' }),
+      },
+      {
+        ts: 1699900003000,
+        type: 'say',
+        say: 'tool',
+        text: JSON.stringify({ tool: 'editedExistingFile', path: 'src/auth.ts' }),
+      },
       { ts: 1699900004000, type: 'say', say: 'command', text: 'npm test' },
       {
         ts: 1699900005000,
@@ -75,7 +91,8 @@ describe('Cline adapter', () => {
         type: 'say',
         say: 'api_req_started',
         text: JSON.stringify({
-          request: '<task>\nnon funziona\n</task>\n\n# Current Working Directory (c:/WORK/PM_service/backup) Files\ncrea_ap.py',
+          request:
+            '<task>\nnon funziona\n</task>\n\n# Current Working Directory (c:/WORK/PM_service/backup) Files\ncrea_ap.py',
           tokensIn: 16486,
           tokensOut: 143,
           cacheReads: 14080,
@@ -104,7 +121,12 @@ describe('Cline adapter', () => {
     fs.mkdirSync(taskDir);
     const ui = [
       { ts: 1729836960268, type: 'say', say: 'task', text: 'Read the files and create a summary' },
-      { ts: 1729836961000, type: 'say', say: 'api_req_started', text: JSON.stringify({ tokensIn: 1200, tokensOut: 300 }) },
+      {
+        ts: 1729836961000,
+        type: 'say',
+        say: 'api_req_started',
+        text: JSON.stringify({ tokensIn: 1200, tokensOut: 300 }),
+      },
     ];
     fs.writeFileSync(path.join(taskDir, 'ui_messages.json'), JSON.stringify(ui), 'utf-8');
     const api = [
@@ -119,7 +141,11 @@ describe('Cline adapter', () => {
         content: [{ type: 'tool_use', name: 'read_file', input: { path: 'docs/details.md' } }],
       },
     ];
-    fs.writeFileSync(path.join(taskDir, 'api_conversation_history.json'), JSON.stringify(api), 'utf-8');
+    fs.writeFileSync(
+      path.join(taskDir, 'api_conversation_history.json'),
+      JSON.stringify(api),
+      'utf-8',
+    );
 
     const s = parseClineTask(taskDir)!;
     expect(s.inputTokens).toBe(1200); // tokens still come from the timeline
@@ -140,7 +166,12 @@ describe('Cline adapter', () => {
       { ts: 1775804723538, type: 'say', say: 'task', text: 'Command to create an ssh key' },
       { ts: 1775804724000, type: 'say', say: 'reasoning', text: 'thinking about ssh-keygen…' },
       { ts: 1775804725000, type: 'say', say: 'checkpoint_created', text: 'abc123' },
-      { ts: 1775804726000, type: 'say', say: 'api_req_started', text: JSON.stringify({ tokensIn: 20, tokensOut: 5 }) },
+      {
+        ts: 1775804726000,
+        type: 'say',
+        say: 'api_req_started',
+        text: JSON.stringify({ tokensIn: 20, tokensOut: 5 }),
+      },
       { ts: 1775804727000, type: 'say', say: 'text', text: 'Run ssh-keygen -t ed25519' },
     ];
     fs.writeFileSync(path.join(taskDir, 'ui_messages.json'), JSON.stringify(ui), 'utf-8');
@@ -165,7 +196,7 @@ describe('Cline adapter', () => {
         '> Tokens: 11k sent, 85 received. Cost: $0.0019 message, $0.0019 session.',
         '',
       ].join('\n'),
-      'utf-8'
+      'utf-8',
     );
     const [s] = parseAiderHistory(file);
     expect(s.model).toBe('openrouter/qwen/qwen3-coder-next');
@@ -251,7 +282,7 @@ describe('Aider adapter', () => {
         '> Tokens: 6.4k sent, 1.3k received. Cost: $0.04 message, $0.07 session.',
         '',
       ].join('\n'),
-      'utf-8'
+      'utf-8',
     );
     const [s] = parseAiderHistory(file);
     expect(s.inputTokens).toBe(6400);

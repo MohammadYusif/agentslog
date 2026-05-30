@@ -12,8 +12,8 @@ import { discoverSessionFiles } from '../../parser/index.js';
 import {
   availableAdapters,
   claudeCodeAdapter,
-  type SourceAdapter,
   type DiscoveredUnit,
+  type SourceAdapter,
 } from '../../parser/sources/index.js';
 import { abbreviateNumber } from '../../utils/format.js';
 
@@ -94,6 +94,6 @@ export async function runIngest(options: IngestOptions = {}): Promise<void> {
   ].filter(Boolean);
 
   process.stdout.write(
-    `${chalk.bold('Done')} — ${parts.join(', ')} · ${abbreviateNumber(totalTokens)} tokens · ${elapsed}s\n`
+    `${chalk.bold('Done')} — ${parts.join(', ')} · ${abbreviateNumber(totalTokens)} tokens · ${elapsed}s\n`,
   );
 }

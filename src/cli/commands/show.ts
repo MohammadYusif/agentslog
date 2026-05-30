@@ -3,23 +3,23 @@
  */
 import chalk from 'chalk';
 import { openDb } from '../../db/index.js';
+import type { SessionRow } from '../../db/queries.js';
 import {
+  childSessions,
+  filesForSession,
   resolveSession,
   toolCallsForSession,
-  filesForSession,
-  childSessions,
 } from '../../db/queries.js';
-import { relativeTime, formatDuration } from '../../utils/time.js';
 import {
   abbreviateNumber,
-  withCommas,
-  shortModel,
-  truncate,
   baseName,
   padTo,
+  shortModel,
+  truncate,
+  withCommas,
 } from '../../utils/format.js';
 import { estimateCost, formatCost } from '../../utils/pricing.js';
-import type { SessionRow } from '../../db/queries.js';
+import { formatDuration, relativeTime } from '../../utils/time.js';
 
 /** Estimate one session row's cost from its model + token columns. */
 function rowCost(s: SessionRow): number | null {
@@ -39,11 +39,11 @@ export interface ShowOptions {
 export function runShow(idPrefix: string, options: ShowOptions = {}): void {
   const db = openDb();
 
-  let session;
+  let session: SessionRow | null;
   try {
     session = resolveSession(db, idPrefix);
   } catch (err) {
-    process.stderr.write(chalk.red((err as Error).message) + '\n');
+    process.stderr.write(`${chalk.red((err as Error).message)}\n`);
     process.exitCode = 1;
     return;
   }
@@ -60,21 +60,21 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
 
   if (options.json) {
     process.stdout.write(
-      JSON.stringify(
+      `${JSON.stringify(
         { session, toolCalls: tools, filesTouched: files, subAgents: children },
         null,
-        2
-      ) + '\n'
+        2,
+      )}\n`,
     );
     return;
   }
 
   const field = (k: string) => chalk.bold.cyan(padTo(k, 16));
 
-  process.stdout.write(chalk.bold.underline(session.ai_title ?? '(untitled session)') + '\n\n');
+  process.stdout.write(`${chalk.bold.underline(session.ai_title ?? '(untitled session)')}\n\n`);
   if (session.parent_session_id) {
     process.stdout.write(
-      chalk.magenta(`⮡ sub-agent of ${session.parent_session_id.slice(0, 8)}`) + '\n'
+      `${chalk.magenta(`⮡ sub-agent of ${session.parent_session_id.slice(0, 8)}`)}\n`,
     );
   }
   process.stdout.write(`${field('Session')}${session.id}\n`);
@@ -86,7 +86,7 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
   if (session.cc_version) process.stdout.write(`${field('CC version')}${session.cc_version}\n`);
   if (session.git_branch) process.stdout.write(`${field('Git branch')}${session.git_branch}\n`);
   process.stdout.write(
-    `${field('Started')}${session.started_at}  ${chalk.dim(`(${relativeTime(session.started_at)})`)}\n`
+    `${field('Started')}${session.started_at}  ${chalk.dim(`(${relativeTime(session.started_at)})`)}\n`,
   );
   process.stdout.write(`${field('Duration')}${formatDuration(session.duration_ms)}\n`);
   process.stdout.write(`${field('User turns')}${withCommas(session.user_turn_count)}\n`);
@@ -96,38 +96,37 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
   process.stdout.write(
     `${field('  Billed in')}${withCommas(session.input_tokens)}  ` +
       chalk.dim(`(${abbreviateNumber(session.input_tokens)})`) +
-      '\n'
+      '\n',
   );
   process.stdout.write(
     `${field('  Output')}${withCommas(session.output_tokens)}  ` +
       chalk.dim(`(${abbreviateNumber(session.output_tokens)})`) +
-      '\n'
+      '\n',
   );
   process.stdout.write(
     `${field('  Last input')}${withCommas(session.last_input_tokens)}  ` +
       chalk.dim('(uncached input_tokens of final assistant turn)') +
-      '\n'
+      '\n',
   );
   process.stdout.write(
     `${field('  Cache')}${chalk.dim(
       `read ${abbreviateNumber(session.cache_read_tokens)}, ` +
-        `created ${abbreviateNumber(session.cache_creation_tokens)}`
-    )}\n`
+        `created ${abbreviateNumber(session.cache_creation_tokens)}`,
+    )}\n`,
   );
   const ownCost = rowCost(session);
   if (ownCost != null) {
     process.stdout.write(
       `${field('  Est. cost')}${formatCost(ownCost)}  ` +
         chalk.dim(`(${shortModel(session.model)} list price)`) +
-        '\n'
+        '\n',
     );
   }
 
   process.stdout.write('\n');
-  const errNote =
-    session.error_count > 0 ? chalk.red(` (${session.error_count} errors)`) : '';
+  const errNote = session.error_count > 0 ? chalk.red(` (${session.error_count} errors)`) : '';
   process.stdout.write(
-    chalk.bold(`Tool calls: ${withCommas(session.tool_call_count)}`) + errNote + '\n'
+    `${chalk.bold(`Tool calls: ${withCommas(session.tool_call_count)}`) + errNote}\n`,
   );
 
   // Summarize tool usage counts.
@@ -140,18 +139,16 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
 
   if (files.length > 0) {
     process.stdout.write('\n');
+    process.stdout.write(`${chalk.bold(`Files touched: ${withCommas(files.length)}`)}\n`);
     process.stdout.write(
-      chalk.bold(`Files touched: ${withCommas(files.length)}`) + '\n'
-    );
-    process.stdout.write(
-      chalk.dim(`  ${padTo('FILE', 40)}${padTo('R', 5)}${padTo('W', 5)}${padTo('E', 5)}\n`)
+      chalk.dim(`  ${padTo('FILE', 40)}${padTo('R', 5)}${padTo('W', 5)}${padTo('E', 5)}\n`),
     );
     for (const f of files.slice(0, 20)) {
       process.stdout.write(
         `  ${padTo(baseName(f.file_path), 40)}` +
           `${padTo(String(f.read_count), 5)}` +
           `${padTo(String(f.write_count), 5)}` +
-          `${padTo(String(f.edit_count), 5)}\n`
+          `${padTo(String(f.edit_count), 5)}\n`,
       );
     }
     if (files.length > 20) {
@@ -167,7 +164,7 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
     for (const e of errors.slice(0, 5)) {
       const ctx = e.file_path ?? e.command ?? '';
       process.stdout.write(
-        `  ${chalk.red('✗')} ${chalk.bold(e.tool_name)} ${chalk.dim(truncate(ctx, 50))}\n`
+        `  ${chalk.red('✗')} ${chalk.bold(e.tool_name)} ${chalk.dim(truncate(ctx, 50))}\n`,
       );
       if (e.error_text) {
         process.stdout.write(`    ${chalk.dim(truncate(e.error_text.replace(/\s+/g, ' '), 90))}\n`);
@@ -186,15 +183,15 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
     process.stdout.write(chalk.bold.magenta(`Sub-agents (${children.length})\n`));
     process.stdout.write(
       chalk.dim(
-        `  ${padTo('ID', 10)}${padTo('MODEL', 12)}${padTo('TOKENS', 9)}${padTo('TOOLS', 7)}TITLE\n`
-      )
+        `  ${padTo('ID', 10)}${padTo('MODEL', 12)}${padTo('TOKENS', 9)}${padTo('TOOLS', 7)}TITLE\n`,
+      ),
     );
     for (const c of children) {
       const ctokens = abbreviateNumber(c.input_tokens + c.output_tokens);
       process.stdout.write(
         `  ${padTo(c.id.slice(0, 8), 10)}${padTo(shortModel(c.model), 12)}` +
           `${padTo(ctokens, 9)}${padTo(String(c.tool_call_count), 7)}` +
-          `${truncate(c.ai_title ?? '(sub-agent)', 36)}\n`
+          `${truncate(c.ai_title ?? '(sub-agent)', 36)}\n`,
       );
     }
 
@@ -202,20 +199,20 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
     process.stdout.write(chalk.bold('Rolled up (session + sub-agents)\n'));
     process.stdout.write(
       `${field('  Tokens')}${withCommas(
-        session.input_tokens + session.output_tokens + childInput + childOutput
+        session.input_tokens + session.output_tokens + childInput + childOutput,
       )}  ` +
         chalk.dim(
           `(in: ${abbreviateNumber(session.input_tokens + childInput)}  ` +
-            `out: ${abbreviateNumber(session.output_tokens + childOutput)})`
+            `out: ${abbreviateNumber(session.output_tokens + childOutput)})`,
         ) +
-        '\n'
+        '\n',
     );
     const rolledErrors = session.error_count + childErrors;
     const errNote2 = rolledErrors > 0 ? chalk.red(` (${rolledErrors} errors)`) : '';
     process.stdout.write(
       `${field('  Tool calls')}${withCommas(session.tool_call_count + childTools)}` +
         errNote2 +
-        '\n'
+        '\n',
     );
 
     // Rolled-up cost: each sub-agent may run a different model, so price each
@@ -227,7 +224,7 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
       process.stdout.write(
         `${field('  Est. cost')}${formatCost(rolledCost)}` +
           chalk.dim(unpriced ? ' (≥, some models unpriced)' : ' (est.)') +
-          '\n'
+          '\n',
       );
     }
   }

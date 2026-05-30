@@ -3,10 +3,10 @@
  */
 import chalk from 'chalk';
 import { openDb } from '../../db/index.js';
-import { statsTotals, topFiles, topTools, tokensByModel } from '../../db/queries.js';
-import { windowCutoffIso } from '../../utils/time.js';
-import { abbreviateNumber, withCommas, baseName, padTo } from '../../utils/format.js';
+import { statsTotals, tokensByModel, topFiles, topTools } from '../../db/queries.js';
+import { abbreviateNumber, baseName, padTo, withCommas } from '../../utils/format.js';
 import { estimateCost, formatCost } from '../../utils/pricing.js';
+import { windowCutoffIso } from '../../utils/time.js';
 
 export interface StatsOptions {
   last?: string;
@@ -47,7 +47,7 @@ export function runStats(options: StatsOptions = {}): void {
 
   if (options.json) {
     process.stdout.write(
-      JSON.stringify(
+      `${JSON.stringify(
         {
           period,
           totals,
@@ -57,8 +57,8 @@ export function runStats(options: StatsOptions = {}): void {
           topTools: tools,
         },
         null,
-        2
-      ) + '\n'
+        2,
+      )}\n`,
     );
     return;
   }
@@ -82,14 +82,14 @@ export function runStats(options: StatsOptions = {}): void {
       chalk.dim(
         `(in: ${abbreviateNumber(totals.input_tokens)}  ` +
           `out: ${abbreviateNumber(totals.output_tokens)}  ` +
-          `cached: ${abbreviateNumber(cached)})`
+          `cached: ${abbreviateNumber(cached)})`,
       ) +
-      '\n'
+      '\n',
   );
   process.stdout.write(
     `${label('TOOLS')}${withCommas(totals.tool_calls)}  ` +
       chalk.dim(`(errors: ${withCommas(totals.errors)}, ${errPct}%)`) +
-      '\n'
+      '\n',
   );
   if (hasPricedTokens) {
     const note = hasUnpricedTokens ? ' (≥, some models unpriced)' : ' (est.)';

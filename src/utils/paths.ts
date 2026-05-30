@@ -23,7 +23,8 @@ export function dbPath(): string {
  */
 export function claudeProjectsDir(): string {
   const override = process.env.CLAUDE_CONFIG_DIR;
-  const base = override && override.trim().length > 0 ? override : path.join(os.homedir(), '.claude');
+  const base =
+    override && override.trim().length > 0 ? override : path.join(os.homedir(), '.claude');
   return path.join(base, 'projects');
 }
 

@@ -4,9 +4,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import type { ParsedSession } from '../parser/types.js';
 import { dbPath } from '../utils/paths.js';
 import { migrate } from './migrate.js';
-import type { ParsedSession } from '../parser/types.js';
 
 let singleton: Database.Database | null = null;
 

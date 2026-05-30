@@ -39,7 +39,7 @@ export function truncate(s: string, width: number): string {
   if (width <= 0) return '';
   if (s.length <= width) return s;
   if (width === 1) return '…';
-  return s.slice(0, width - 1) + '…';
+  return `${s.slice(0, width - 1)}…`;
 }
 
 /** Pad (or truncate) a string to exactly `width` visible characters. */
@@ -80,14 +80,10 @@ export interface Column {
 /** Render a fixed-width table with a bold, colored header row. */
 export function renderTable(columns: Column[], rows: string[][]): string {
   const lines: string[] = [];
-  const header = columns
-    .map((c) => alignCell(c.header, c.width, c.align))
-    .join('  ');
+  const header = columns.map((c) => alignCell(c.header, c.width, c.align)).join('  ');
   lines.push(chalk.bold.cyan(header));
   for (const row of rows) {
-    const line = columns
-      .map((c, i) => alignCell(row[i] ?? '', c.width, c.align))
-      .join('  ');
+    const line = columns.map((c, i) => alignCell(row[i] ?? '', c.width, c.align)).join('  ');
     lines.push(line);
   }
   return lines.join('\n');

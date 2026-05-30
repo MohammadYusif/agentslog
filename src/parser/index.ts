@@ -4,11 +4,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { claudeProjectsDir } from '../utils/paths.js';
-import { parseSessionFile, normalizePath } from './claude-code.js';
+import { normalizePath, parseSessionFile } from './claude-code.js';
 import type { ParsedSession } from './types.js';
 
-export { parseSessionFile, normalizePath };
 export type { ParsedSession } from './types.js';
+export { normalizePath, parseSessionFile };
 
 /** A `.jsonl` file discovered on disk, tagged with its project hash. */
 export interface DiscoveredFile {

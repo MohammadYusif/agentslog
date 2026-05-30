@@ -4,13 +4,13 @@
 import chalk from 'chalk';
 import { openDb } from '../../db/index.js';
 import {
-  resolveSession,
   filesForSession,
-  toolCallsForSession,
+  resolveSession,
   type SessionRow,
+  toolCallsForSession,
 } from '../../db/queries.js';
-import { relativeTime, formatDuration } from '../../utils/time.js';
-import { abbreviateNumber, withCommas, shortModel, baseName, padTo } from '../../utils/format.js';
+import { abbreviateNumber, baseName, padTo, shortModel, withCommas } from '../../utils/format.js';
+import { formatDuration, relativeTime } from '../../utils/time.js';
 
 export interface DiffOptions {
   json?: boolean;
@@ -22,7 +22,7 @@ function resolveOrReport(db: ReturnType<typeof openDb>, prefix: string): Session
     if (!s) process.stderr.write(chalk.red(`No session matches "${prefix}".\n`));
     return s;
   } catch (err) {
-    process.stderr.write(chalk.red((err as Error).message) + '\n');
+    process.stderr.write(`${chalk.red((err as Error).message)}\n`);
     return null;
   }
 }
@@ -59,7 +59,7 @@ export function runDiff(id1: string, id2: string, options: DiffOptions = {}): vo
 
   if (options.json) {
     process.stdout.write(
-      JSON.stringify(
+      `${JSON.stringify(
         {
           a,
           b,
@@ -70,8 +70,8 @@ export function runDiff(id1: string, id2: string, options: DiffOptions = {}): vo
           },
         },
         null,
-        2
-      ) + '\n'
+        2,
+      )}\n`,
     );
     return;
   }
@@ -82,32 +82,30 @@ export function runDiff(id1: string, id2: string, options: DiffOptions = {}): vo
 
   // Header row with the two session ids/titles.
   process.stdout.write(
-    `${padTo('', 14)}${chalk.bold(cell('A: ' + a.id.slice(0, 8)))}${chalk.bold('B: ' + b.id.slice(0, 8))}\n`
+    `${padTo('', 14)}${chalk.bold(cell(`A: ${a.id.slice(0, 8)}`))}${chalk.bold(`B: ${b.id.slice(0, 8)}`)}\n`,
   );
   process.stdout.write(
-    `${label('title')}${cell(truncateField(a.ai_title))}${truncateField(b.ai_title)}\n`
+    `${label('title')}${cell(truncateField(a.ai_title))}${truncateField(b.ai_title)}\n`,
+  );
+  process.stdout.write(`${label('model')}${cell(shortModel(a.model))}${shortModel(b.model)}\n`);
+  process.stdout.write(
+    `${label('started')}${cell(relativeTime(a.started_at))}${relativeTime(b.started_at)}\n`,
   );
   process.stdout.write(
-    `${label('model')}${cell(shortModel(a.model))}${shortModel(b.model)}\n`
-  );
-  process.stdout.write(
-    `${label('started')}${cell(relativeTime(a.started_at))}${relativeTime(b.started_at)}\n`
-  );
-  process.stdout.write(
-    `${label('duration')}${cell(formatDuration(a.duration_ms))}${formatDuration(b.duration_ms)}\n`
+    `${label('duration')}${cell(formatDuration(a.duration_ms))}${formatDuration(b.duration_ms)}\n`,
   );
   process.stdout.write(
     `${label('tokens')}${cell(abbreviateNumber(a.input_tokens + a.output_tokens))}` +
-      `${abbreviateNumber(b.input_tokens + b.output_tokens)}\n`
+      `${abbreviateNumber(b.input_tokens + b.output_tokens)}\n`,
   );
   process.stdout.write(
-    `${label('tool calls')}${cell(withCommas(a.tool_call_count))}${withCommas(b.tool_call_count)}\n`
+    `${label('tool calls')}${cell(withCommas(a.tool_call_count))}${withCommas(b.tool_call_count)}\n`,
   );
   process.stdout.write(
-    `${label('errors')}${cell(withCommas(a.error_count))}${withCommas(b.error_count)}\n`
+    `${label('errors')}${cell(withCommas(a.error_count))}${withCommas(b.error_count)}\n`,
   );
   process.stdout.write(
-    `${label('files')}${cell(withCommas(aFiles.length))}${withCommas(bFiles.length)}\n`
+    `${label('files')}${cell(withCommas(aFiles.length))}${withCommas(bFiles.length)}\n`,
   );
 
   // Tool delta: union of tool names with per-session counts.
@@ -120,9 +118,13 @@ export function runDiff(id1: string, id2: string, options: DiffOptions = {}): vo
       const cb = bToolCounts.get(name) ?? 0;
       const delta = cb - ca;
       const deltaStr =
-        delta === 0 ? chalk.dim('=') : delta > 0 ? chalk.green(`+${delta}`) : chalk.red(String(delta));
+        delta === 0
+          ? chalk.dim('=')
+          : delta > 0
+            ? chalk.green(`+${delta}`)
+            : chalk.red(String(delta));
       process.stdout.write(
-        `  ${padTo(name, 16)}${padTo(String(ca), 6)}${padTo(String(cb), 6)}${deltaStr}\n`
+        `  ${padTo(name, 16)}${padTo(String(ca), 6)}${padTo(String(cb), 6)}${deltaStr}\n`,
       );
     }
   }
@@ -141,7 +143,7 @@ function truncateField(s: string | null): string {
 
 function printFileGroup(title: string, files: string[]): void {
   if (files.length === 0) return;
-  process.stdout.write(`  ${chalk.dim(title + ':')} ${files.length}\n`);
+  process.stdout.write(`  ${chalk.dim(`${title}:`)} ${files.length}\n`);
   for (const f of files.slice(0, 8)) {
     process.stdout.write(`    ${baseName(f)}\n`);
   }

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import chalk from 'chalk';
 /**
  * agentslog — query your Claude Code session history as a local SQLite database.
  *
@@ -6,14 +7,13 @@
  * handler in ./commands so the parsing surface stays thin and testable.
  */
 import { Command } from 'commander';
-import chalk from 'chalk';
-import { runIngest } from './commands/ingest.js';
-import { runSessions } from './commands/sessions.js';
-import { runQuery } from './commands/query.js';
-import { runStats } from './commands/stats.js';
-import { runShow } from './commands/show.js';
 import { runDiff } from './commands/diff.js';
 import { runErrors } from './commands/errors.js';
+import { runIngest } from './commands/ingest.js';
+import { runQuery } from './commands/query.js';
+import { runSessions } from './commands/sessions.js';
+import { runShow } from './commands/show.js';
+import { runStats } from './commands/stats.js';
 import { runWatch } from './commands/watch.js';
 
 const program = new Command();
@@ -105,6 +105,6 @@ program
 
 program.parseAsync(process.argv).catch((err) => {
   const msg = err instanceof Error ? err.message : String(err);
-  process.stderr.write(chalk.red(`error: ${msg}`) + '\n');
+  process.stderr.write(`${chalk.red(`error: ${msg}`)}\n`);
   process.exit(1);
 });

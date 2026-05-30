@@ -15,8 +15,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { aiderSearchPaths } from '../../utils/paths.js';
 import { normalizePath } from '../claude-code.js';
-import type { ParsedSession, ParsedToolCall, ParsedFileTouched } from '../types.js';
-import type { SourceAdapter, DiscoveredUnit } from './types.js';
+import type { ParsedFileTouched, ParsedSession, ParsedToolCall } from '../types.js';
+import type { DiscoveredUnit, SourceAdapter } from './types.js';
 
 const HISTORY_FILENAME = '.aider.chat.history.md';
 
@@ -90,7 +90,7 @@ function parseAiderChunk(
   filePath: string,
   repoDir: string,
   index: number,
-  fallbackTime: string
+  fallbackTime: string,
 ): ParsedSession | null {
   const trimmed = chunk.trim();
   if (trimmed.length === 0) return null;
@@ -130,7 +130,7 @@ function parseAiderChunk(
     }
 
     const tok = /^>\s*Tokens:\s*([\d.,]+\s*[kKmM]?)\s*sent,\s*([\d.,]+\s*[kKmM]?)\s*received/i.exec(
-      line
+      line,
     );
     if (tok) {
       inputTokens += parseNum(tok[1]);
@@ -157,7 +157,6 @@ function parseAiderChunk(
       const fp = added[1].trim();
       toolCalls.push(mkCall('add_to_chat', fp, sequenceNum++, startedAt));
       bumpFile(fp, 'read');
-      continue;
     }
   }
 
@@ -195,7 +194,7 @@ function mkCall(
   toolName: string,
   filePath: string,
   sequenceNum: number,
-  at: string
+  at: string,
 ): ParsedToolCall {
   return {
     id: '', // filled in by the writer via session id + sequence
@@ -253,7 +252,10 @@ export const aiderAdapter: SourceAdapter = {
         findHistoryFiles(p, out);
       }
     }
-    return out.map((filePath) => ({ filePath, projectHash: normalizePath(path.dirname(filePath)) }));
+    return out.map((filePath) => ({
+      filePath,
+      projectHash: normalizePath(path.dirname(filePath)),
+    }));
   },
 
   async parse(unit: DiscoveredUnit) {

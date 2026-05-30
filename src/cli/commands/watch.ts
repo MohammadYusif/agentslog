@@ -2,7 +2,7 @@
  * `agentslog watch` — daemon that re-ingests transcripts as they change.
  */
 import chalk from 'chalk';
-import { openDb, closeDb } from '../../db/index.js';
+import { closeDb, openDb } from '../../db/index.js';
 import { startWatcher } from '../../watcher/index.js';
 import { runIngest } from './ingest.js';
 
@@ -24,7 +24,7 @@ export async function runWatch(options: WatchCmdOptions = {}): Promise<void> {
 
   await new Promise<void>((resolve) => {
     const shutdown = () => {
-      process.stdout.write('\n' + chalk.dim('stopping watcher…') + '\n');
+      process.stdout.write(`\n${chalk.dim('stopping watcher…')}\n`);
       void stop().then(() => {
         closeDb();
         resolve();

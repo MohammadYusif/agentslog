@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import { claudeProjectsDir } from '../../utils/paths.js';
 import { discoverSessionFiles, parseSessionFile } from '../index.js';
-import type { SourceAdapter, DiscoveredUnit } from './types.js';
+import type { DiscoveredUnit, SourceAdapter } from './types.js';
 
 export const claudeCodeAdapter: SourceAdapter = {
   name: 'claude-code',
