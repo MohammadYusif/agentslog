@@ -95,6 +95,41 @@ describe('Cline adapter', () => {
     expect(s.userTurnCount).toBe(1);
   });
 
+  it('recovers tools from api_conversation_history.json (older Cline, no say:"tool")', () => {
+    // Older Cline put tool use as XML inside the model conversation rather than
+    // as say:"tool" timeline entries. When the timeline has no tools, fall back
+    // to the sibling api_conversation_history.json. Verified against real tasks.
+    const dir = tmp();
+    const taskDir = path.join(dir, '1729836960268');
+    fs.mkdirSync(taskDir);
+    const ui = [
+      { ts: 1729836960268, type: 'say', say: 'task', text: 'Read the files and create a summary' },
+      { ts: 1729836961000, type: 'say', say: 'api_req_started', text: JSON.stringify({ tokensIn: 1200, tokensOut: 300 }) },
+    ];
+    fs.writeFileSync(path.join(taskDir, 'ui_messages.json'), JSON.stringify(ui), 'utf-8');
+    const api = [
+      { role: 'user', content: 'Read the files and create a summary' },
+      {
+        role: 'assistant',
+        content:
+          'I will read the file.\n<read_file><path>docs/overview.md</path></read_file>\nNow writing.\n<write_to_file><path>SUMMARY.md</path><content>hello</content></write_to_file>',
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', name: 'read_file', input: { path: 'docs/details.md' } }],
+      },
+    ];
+    fs.writeFileSync(path.join(taskDir, 'api_conversation_history.json'), JSON.stringify(api), 'utf-8');
+
+    const s = parseClineTask(taskDir)!;
+    expect(s.inputTokens).toBe(1200); // tokens still come from the timeline
+    const tools = s.toolCalls.map((t) => t.toolName);
+    expect(tools).toEqual(['read_file', 'write_to_file', 'read_file']); // XML + native tool_use
+    expect(s.filesTouched.find((f) => f.filePath === 'docs/overview.md')!.readCount).toBe(1);
+    expect(s.filesTouched.find((f) => f.filePath === 'SUMMARY.md')!.writeCount).toBe(1);
+    expect(s.filesTouched.find((f) => f.filePath === 'docs/details.md')!.readCount).toBe(1);
+  });
+
   it('returns null when ui_messages.json is missing or empty', () => {
     const dir = tmp();
     const taskDir = path.join(dir, 'empty');

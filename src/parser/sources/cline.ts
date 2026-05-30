@@ -54,6 +54,110 @@ function mapClineTool(
   }
 }
 
+/** Map an XML/native tool name (used in api_conversation_history) to a kind. */
+function mapApiTool(name: string): 'read' | 'write' | 'edit' | 'command' | null {
+  switch (name) {
+    case 'read_file':
+      return 'read';
+    case 'write_to_file':
+      return 'write';
+    case 'replace_in_file':
+    case 'apply_diff':
+    case 'insert_content':
+      return 'edit';
+    case 'execute_command':
+      return 'command';
+    default:
+      return null; // search_files, list_files, ask_followup_question, …
+  }
+}
+
+/** Tool tags recognised inside assistant text in older Cline transcripts. */
+const API_TOOL_NAMES = [
+  'read_file',
+  'write_to_file',
+  'replace_in_file',
+  'apply_diff',
+  'insert_content',
+  'execute_command',
+  'search_files',
+  'list_files',
+] as const;
+
+interface ApiToolHit {
+  name: string;
+  path: string | null;
+  command: string | null;
+}
+
+/** Pull tool invocations out of one assistant text blob's XML tags. */
+function extractXmlTools(text: string): ApiToolHit[] {
+  const hits: ApiToolHit[] = [];
+  for (const name of API_TOOL_NAMES) {
+    const re = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`, 'g');
+    for (const m of text.matchAll(re)) {
+      const inner = m[1];
+      const pathM = /<path>([\s\S]*?)<\/path>/.exec(inner);
+      const cmdM = /<command>([\s\S]*?)<\/command>/.exec(inner);
+      hits.push({
+        name,
+        path: pathM ? pathM[1].trim() : null,
+        command: cmdM ? cmdM[1].trim() : null,
+      });
+    }
+  }
+  return hits;
+}
+
+/**
+ * Fallback tool extraction for older Cline transcripts whose `ui_messages.json`
+ * carries no `say:"tool"` entries: the tool activity lives in the sibling
+ * `api_conversation_history.json`, either as native Anthropic `tool_use` blocks
+ * or as XML tags embedded in assistant text. Returns [] if unavailable.
+ */
+function extractToolsFromApiHistory(taskDir: string): ApiToolHit[] {
+  const file = path.join(taskDir, 'api_conversation_history.json');
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(file);
+  } catch {
+    return [];
+  }
+  // Guard against pathological sizes (these can grow large).
+  if (stat.size > 25 * 1024 * 1024) return [];
+
+  const messages = tryParse<{ role?: string; content?: unknown }[]>(safeRead(file));
+  if (!Array.isArray(messages)) return [];
+
+  const hits: ApiToolHit[] = [];
+  for (const m of messages) {
+    if (m.role !== 'assistant') continue;
+    const content = m.content;
+    if (typeof content === 'string') {
+      hits.push(...extractXmlTools(content));
+    } else if (Array.isArray(content)) {
+      for (const block of content as Record<string, unknown>[]) {
+        if (block.type === 'tool_use' && typeof block.name === 'string') {
+          const input = (block.input ?? {}) as Record<string, unknown>;
+          hits.push({
+            name: block.name,
+            path:
+              typeof input.path === 'string'
+                ? input.path
+                : typeof input.file_path === 'string'
+                  ? input.file_path
+                  : null,
+            command: typeof input.command === 'string' ? input.command : null,
+          });
+        } else if (block.type === 'text' && typeof block.text === 'string') {
+          hits.push(...extractXmlTools(block.text));
+        }
+      }
+    }
+  }
+  return hits;
+}
+
 /** Parse one Cline task directory into a normalized session. */
 export function parseClineTask(taskDir: string): ParsedSession | null {
   const uiPath = path.join(taskDir, 'ui_messages.json');
@@ -198,6 +302,26 @@ export function parseClineTask(taskDir: string): ParsedSession | null {
   }
 
   if (firstTs == null) return null;
+
+  // Older Cline transcripts have no say:"tool" entries; recover tool and file
+  // activity from the sibling api_conversation_history.json.
+  if (toolCalls.length === 0) {
+    for (const hit of extractToolsFromApiHistory(taskDir)) {
+      const kind = mapApiTool(hit.name);
+      const fp = hit.path ? normalizePath(hit.path) : null;
+      toolCalls.push({
+        id: `${taskId}:${sequenceNum}`,
+        sequenceNum: sequenceNum++,
+        toolName: hit.name,
+        calledAt: null,
+        success: true,
+        filePath: fp,
+        command: hit.command ? hit.command.slice(0, 500) : null,
+        errorText: null,
+      });
+      if (fp && (kind === 'read' || kind === 'write' || kind === 'edit')) bumpFile(fp, kind);
+    }
+  }
 
   // Fall back to the first user text when no say:"task" was present, and ensure
   // at least one user turn is counted for a non-empty task.
