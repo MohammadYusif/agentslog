@@ -37,6 +37,7 @@ program
   .description('List indexed sessions as a table')
   .option('--last <window>', 'only sessions within a window, e.g. 7d, 24h, 2w')
   .option('--project <path>', 'filter by project path or hash substring')
+  .option('--source <name>', 'filter by source: claude-code, cline, aider')
   .option('--limit <n>', 'maximum rows to show')
   .option('--json', 'output raw JSON')
   .action((opts) => {

@@ -80,6 +80,8 @@ export interface ListFilters {
   sinceIso?: string | null;
   /** Substring match against project_path or project_hash. */
   project?: string | null;
+  /** Exact source filter ('claude-code', 'cline', 'aider'). */
+  source?: string | null;
   limit?: number | null;
 }
 
@@ -99,6 +101,10 @@ export function listSessions(db: Database.Database, filters: ListFilters = {}): 
   if (filters.project) {
     clauses.push('(s.project_path LIKE @proj OR s.project_hash LIKE @proj)');
     params.proj = `%${filters.project}%`;
+  }
+  if (filters.source) {
+    clauses.push('s.source = @source');
+    params.source = filters.source;
   }
 
   const where = `WHERE ${clauses.join(' AND ')}`;

@@ -16,6 +16,7 @@ import {
 export interface SessionsOptions {
   last?: string;
   project?: string;
+  source?: string;
   json?: boolean;
   limit?: string;
 }
@@ -29,6 +30,7 @@ export function runSessions(options: SessionsOptions = {}): void {
   const rows = listSessions(db, {
     sinceIso,
     project: options.project ?? null,
+    source: options.source ?? null,
     limit,
   });
 
@@ -42,8 +44,13 @@ export function runSessions(options: SessionsOptions = {}): void {
     return;
   }
 
+  // Only show the SOURCE column when more than one source is present, to keep
+  // the common Claude-Code-only view uncluttered.
+  const multiSource = new Set(rows.map((s) => s.source)).size > 1;
+
   const columns: Column[] = [
     { header: 'SESSION ID', width: 12 },
+    ...(multiSource ? [{ header: 'SOURCE', width: 12 } as Column] : []),
     { header: 'TITLE', width: 28 },
     { header: 'PROJECT', width: 18 },
     { header: 'MODEL', width: 12 },
@@ -52,15 +59,18 @@ export function runSessions(options: SessionsOptions = {}): void {
     { header: 'SUB', width: 4, align: 'right' },
   ];
 
-  const tableRows = rows.map((s: SessionRollupRow) => [
-    s.id.slice(0, 8),
-    s.ai_title ?? chalk.dim('(untitled)'),
-    projectLabel(s.project_path, s.project_hash),
-    shortModel(s.model),
-    relativeTime(s.started_at),
-    abbreviateNumber(s.rollup_input_tokens + s.rollup_output_tokens),
-    s.subagent_count > 0 ? chalk.magenta(`+${s.subagent_count}`) : chalk.dim('–'),
-  ]);
+  const tableRows = rows.map((s: SessionRollupRow) =>
+    [
+      s.id.slice(0, 8),
+      multiSource ? s.source : null,
+      s.ai_title ?? chalk.dim('(untitled)'),
+      projectLabel(s.project_path, s.project_hash),
+      shortModel(s.model),
+      relativeTime(s.started_at),
+      abbreviateNumber(s.rollup_input_tokens + s.rollup_output_tokens),
+      s.subagent_count > 0 ? chalk.magenta(`+${s.subagent_count}`) : chalk.dim('–'),
+    ].filter((c): c is string => c !== null)
+  );
 
   process.stdout.write(renderTable(columns, tableRows) + '\n');
 

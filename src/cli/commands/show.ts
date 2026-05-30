@@ -78,6 +78,9 @@ export function runShow(idPrefix: string, options: ShowOptions = {}): void {
     );
   }
   process.stdout.write(`${field('Session')}${session.id}\n`);
+  if (session.source && session.source !== 'claude-code') {
+    process.stdout.write(`${field('Source')}${session.source}\n`);
+  }
   process.stdout.write(`${field('Project')}${session.project_path ?? session.project_hash}\n`);
   process.stdout.write(`${field('Model')}${shortModel(session.model)}\n`);
   if (session.cc_version) process.stdout.write(`${field('CC version')}${session.cc_version}\n`);
