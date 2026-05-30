@@ -1,0 +1,12 @@
+# Normalize line endings: store everything as LF in the repo and check out LF,
+# so formatting (Biome) stays consistent across macOS/Linux/Windows.
+* text=auto eol=lf
+
+# Treat these as binary (never normalize / diff as text).
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+
+# Generated lockfile — collapse in diffs.
+pnpm-lock.yaml linguist-generated=true -diff

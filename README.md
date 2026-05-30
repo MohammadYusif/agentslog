@@ -8,7 +8,7 @@
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg" alt="Node.js ≥20"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6.svg" alt="TypeScript"></a>
-  <a href="#-development"><img src="https://img.shields.io/badge/tests-54%20passing-brightgreen.svg" alt="54 tests passing"></a>
+  <a href="#-development"><img src="https://img.shields.io/badge/tests-61%20passing-brightgreen.svg" alt="61 tests passing"></a>
 </p>
 
 <p align="center"><strong>Your Claude Code history is a database. Query it like one.</strong></p>
@@ -329,16 +329,23 @@ erDiagram
 
 ## 🛠️ Development
 
+This project uses [pnpm](https://pnpm.io).
+
 ```bash
 git clone https://github.com/MohammadYusif/agentslog.git
 cd agentslog
-npm install
-npm run build
-npm link           # installs the `agentslog` binary globally
+pnpm install
+pnpm build
+pnpm link --global   # installs the `agentslog` binary globally
 
-npm run dev        # rebuild on change
-npm test           # vitest suite
+pnpm dev             # rebuild on change
+pnpm test            # vitest suite
+pnpm check           # biome lint + format check
+pnpm typecheck       # tsc --noEmit
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/ADAPTERS.md](docs/ADAPTERS.md)
+to add support for another agent.
 
 ---
 

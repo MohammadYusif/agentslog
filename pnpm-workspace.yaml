@@ -1,0 +1,4 @@
+# Marks agentslog as a self-contained pnpm workspace root with no sub-packages.
+# This keeps `pnpm install` working even when the repo is cloned inside another
+# pnpm monorepo, so it never inherits a parent workspace's settings or engines.
+packages: []
