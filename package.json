@@ -1,11 +1,17 @@
 {
   "name": "agentslog",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Query your Claude Code session history as a local SQLite database",
   "type": "module",
-  "bin": { "agentslog": "./dist/index.js" },
-  "engines": { "node": ">=20" },
-  "files": ["dist"],
+  "bin": {
+    "agentslog": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist"
+  ],
   "keywords": [
     "claude-code",
     "claude",
@@ -39,11 +45,13 @@
     "check:fix": "biome check --write src test"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^11.0.0",
     "chalk": "^5.4.1",
     "chokidar": "^4.0.3",
     "commander": "^13.1.0",
-    "env-paths": "^3.0.0"
+    "env-paths": "^3.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
@@ -55,6 +63,10 @@
   },
   "packageManager": "pnpm@9.15.4",
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "@biomejs/biome", "esbuild"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "@biomejs/biome",
+      "esbuild"
+    ]
   }
 }
