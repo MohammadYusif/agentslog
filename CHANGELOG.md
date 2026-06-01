@@ -4,6 +4,14 @@ All notable changes to **agentslog** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] — 2026-06-01
+
+### Changed
+- **Cost breakdown.** `stats` (and the MCP `get_stats` tool) now split the
+  estimated cost into input / output / cache-write / cache-read. Cache reads
+  usually dominate the headline number — showing them separately makes clear
+  that prompt caching is *saving* money, not wasting it.
+
 ## [0.4.0] — 2026-06-01
 
 The **self-improvement** release: agentslog now detects inefficient runs, distils
@@ -71,6 +79,7 @@ Initial release.
   database with a busy timeout, idempotent per-session writes, and storage in the
   OS app-data directory via `env-paths`.
 
+[0.4.1]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.4.1
 [0.4.0]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.4.0
 [0.3.0]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.3.0
 [0.2.0]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.2.0

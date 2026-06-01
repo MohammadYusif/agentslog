@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { estimateCost, formatCost, loadPricing, priceForModel } from '../src/utils/pricing.js';
+import {
+  estimateCost,
+  estimateCostBreakdown,
+  formatCost,
+  loadPricing,
+  priceForModel,
+} from '../src/utils/pricing.js';
 
 describe('pricing', () => {
   it('matches a model id to its price by substring', () => {
@@ -29,6 +35,28 @@ describe('pricing', () => {
       cacheCreationTokens: 1_000_000,
     });
     expect(cost).toBeCloseTo(15 + 75 + 1.5 + 18.75, 5);
+  });
+
+  it('breaks the cost down by bucket, summing to the total', () => {
+    const b = estimateCostBreakdown('claude-opus-4-8', {
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheCreationTokens: 1_000_000,
+    })!;
+    expect(b.input).toBeCloseTo(15, 5);
+    expect(b.output).toBeCloseTo(75, 5);
+    expect(b.cacheRead).toBeCloseTo(1.5, 5);
+    expect(b.cacheWrite).toBeCloseTo(18.75, 5);
+    expect(b.total).toBeCloseTo(b.input + b.output + b.cacheRead + b.cacheWrite, 5);
+    expect(
+      estimateCostBreakdown('gpt-4o', {
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      }),
+    ).toBeNull();
   });
 
   it('prefers the longest matching pricing key', () => {

@@ -109,26 +109,45 @@ export function priceForModel(
   return null;
 }
 
+/** USD cost split by token bucket, so callers can show where spend goes. */
+export interface CostBreakdown {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
 /**
- * Estimate the USD cost of a token breakdown for a given model. Returns null
- * when the model has no known pricing, so callers can show "unknown" rather
- * than a misleading $0.00.
+ * Estimate cost split by bucket for a model. Returns null when the model has no
+ * known pricing. Cache reads usually dominate the total — surfacing them
+ * separately makes clear that prompt caching is *saving* money, not wasting it.
+ */
+export function estimateCostBreakdown(
+  model: string | null | undefined,
+  tokens: TokenCounts,
+  table = loadPricing(),
+): CostBreakdown | null {
+  const price = priceForModel(model, table);
+  if (!price) return null;
+  const per = 1_000_000;
+  const input = (tokens.inputTokens * price.input) / per;
+  const output = (tokens.outputTokens * price.output) / per;
+  const cacheRead = (tokens.cacheReadTokens * price.cacheRead) / per;
+  const cacheWrite = (tokens.cacheCreationTokens * price.cacheWrite) / per;
+  return { input, output, cacheRead, cacheWrite, total: input + output + cacheRead + cacheWrite };
+}
+
+/**
+ * Estimate the total USD cost for a model. Returns null when the model has no
+ * known pricing, so callers can show "unknown" rather than a misleading $0.00.
  */
 export function estimateCost(
   model: string | null | undefined,
   tokens: TokenCounts,
   table = loadPricing(),
 ): number | null {
-  const price = priceForModel(model, table);
-  if (!price) return null;
-  const per = 1_000_000;
-  return (
-    (tokens.inputTokens * price.input +
-      tokens.outputTokens * price.output +
-      tokens.cacheReadTokens * price.cacheRead +
-      tokens.cacheCreationTokens * price.cacheWrite) /
-    per
-  );
+  return estimateCostBreakdown(model, tokens, table)?.total ?? null;
 }
 
 /** Format a USD amount with sensible precision: $12.34, $0.0042, $0. */

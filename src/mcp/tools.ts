@@ -27,7 +27,7 @@ import {
   topTools,
 } from '../db/queries.js';
 import { normalizePath } from '../parser/claude-code.js';
-import { estimateCost } from '../utils/pricing.js';
+import { type CostBreakdown, estimateCostBreakdown } from '../utils/pricing.js';
 import { windowCutoffIso } from '../utils/time.js';
 
 /** The project scope key for the directory the MCP server runs in. */
@@ -140,23 +140,35 @@ export const MCP_TOOLS: McpTool[] = [
     handler: (db, a) => {
       const sinceIso = windowCutoffIso(a.last as string | undefined);
       const totals = statsTotals(db, sinceIso);
-      let costUsd = 0;
+      const cost: CostBreakdown = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
       let hasPriced = false;
       for (const m of tokensByModel(db, sinceIso)) {
-        const c = estimateCost(m.model, {
+        const b = estimateCostBreakdown(m.model, {
           inputTokens: m.input_tokens,
           outputTokens: m.output_tokens,
           cacheReadTokens: m.cache_read_tokens,
           cacheCreationTokens: m.cache_creation_tokens,
         });
-        if (c != null) {
-          costUsd += c;
+        if (b != null) {
+          cost.input += b.input;
+          cost.output += b.output;
+          cost.cacheRead += b.cacheRead;
+          cost.cacheWrite += b.cacheWrite;
+          cost.total += b.total;
           hasPriced = true;
         }
       }
       return {
         totals,
-        estimatedCostUsd: hasPriced ? Number(costUsd.toFixed(4)) : null,
+        estimatedCostUsd: hasPriced ? Number(cost.total.toFixed(4)) : null,
+        estimatedCostBreakdownUsd: hasPriced
+          ? {
+              input: Number(cost.input.toFixed(4)),
+              output: Number(cost.output.toFixed(4)),
+              cacheWrite: Number(cost.cacheWrite.toFixed(4)),
+              cacheRead: Number(cost.cacheRead.toFixed(4)),
+            }
+          : null,
         topFiles: topFiles(db, sinceIso, 10),
         topTools: topTools(db, sinceIso, 10),
       };
