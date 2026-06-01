@@ -317,6 +317,22 @@ repeating past mistakes.
 - **Check `list_lessons`** when unsure how to do something in a project.
 - **When you hit a non-obvious gotcha**, call `record_lesson` (with a short
   exact `trigger`, e.g. `ls -Recurse`) so future sessions avoid it.
+
+### When something breaks, diagnose with agentslog first
+
+Treat agentslog as the first diagnostic step for any error or "this used to
+work" regression — before guessing or re-reading code. Chain the tools like a
+debugger:
+
+- An **error or failed command** → `recent_errors` (filter by the failing tool
+  and project) to see if it happened before and how it was resolved.
+- A **file misbehaving** → `find_sessions_by_file`, then `get_session` on the
+  suspect run for its full tool-call trace.
+- **"It worked yesterday"** → find the last good run and `get_session` both to
+  compare what diverged.
+- **Before undoing past work** → `search_reasoning` to recover the original
+  intent so you don't reintroduce a bug a past session fixed.
+- **After the fix** → `record_lesson` so the next occurrence is caught instantly.
 ```
 
 > MCP servers load at **session start**, so open a fresh Claude Code session
