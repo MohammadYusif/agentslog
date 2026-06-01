@@ -6,6 +6,7 @@ import { openDb, writeSession } from '../src/db/index.js';
 import {
   computeFlags,
   type EfficiencyMetrics,
+  recentErrors,
   repeatedFailures,
   reviewCandidates,
   sessionEfficiency,
@@ -59,12 +60,16 @@ function session(over: Partial<ParsedSession> = {}): ParsedSession {
   };
 }
 
-function failCall(seq: number, command: string): ParsedToolCall {
+function failCall(
+  seq: number,
+  command: string,
+  calledAt: string | null = '2026-01-05T00:01:00Z',
+): ParsedToolCall {
   return {
     id: String(seq),
     sequenceNum: seq,
     toolName: 'Bash',
-    calledAt: '2026-01-05T00:01:00Z',
+    calledAt,
     success: false,
     filePath: null,
     command,
@@ -188,6 +193,68 @@ describe('reviewCandidates', () => {
     expect(out.map((c) => c.session_id)).toEqual(['bad']);
     expect(out[0].flags).toContain('high_error_rate');
     expect(out[0].flags).toContain('repeated_failure');
+    db.close();
+  });
+
+  it('windows on activity time, not session start (long-running session)', () => {
+    const db = openDb(dbFile);
+    // Session started Jan 1 but its failing calls happened Jan 10.
+    writeSession(
+      db,
+      session({
+        id: 'longrun',
+        startedAt: '2026-01-01T00:00:00Z',
+        toolCallCount: 5,
+        errorCount: 3,
+        toolCalls: [
+          failCall(0, 'ls -Recurse', '2026-01-10T00:00:00Z'),
+          failCall(1, 'ls -Recurse', '2026-01-10T00:01:00Z'),
+          failCall(2, 'ls -Recurse', '2026-01-10T00:02:00Z'),
+        ],
+      }),
+    );
+    // A window that starts AFTER the session start but BEFORE the activity.
+    const out = reviewCandidates(db, '2026-01-05T00:00:00Z');
+    expect(out.map((c) => c.session_id)).toContain('longrun');
+    db.close();
+  });
+});
+
+describe('recentErrors windowing', () => {
+  it('includes a recent failure even when the session started before the window', () => {
+    const db = openDb(dbFile);
+    writeSession(
+      db,
+      session({
+        id: 'longrun',
+        startedAt: '2026-01-01T00:00:00Z',
+        toolCallCount: 1,
+        errorCount: 1,
+        toolCalls: [failCall(0, 'ls -Recurse', '2026-01-10T00:00:00Z')],
+      }),
+    );
+    const hits = recentErrors(db, { sinceIso: '2026-01-05T00:00:00Z' });
+    expect(hits).toHaveLength(1);
+    expect(hits[0].command).toBe('ls -Recurse');
+    db.close();
+  });
+
+  it('falls back to session start when a failure has no call timestamp', () => {
+    const db = openDb(dbFile);
+    writeSession(
+      db,
+      session({
+        id: 'oldnull',
+        startedAt: '2026-01-01T00:00:00Z',
+        toolCallCount: 1,
+        errorCount: 1,
+        toolCalls: [failCall(0, 'ls -Recurse', null)],
+      }),
+    );
+    // Null call time → uses session start (Jan 1), which is before the window.
+    expect(recentErrors(db, { sinceIso: '2026-01-05T00:00:00Z' })).toHaveLength(0);
+    // No window → still returned.
+    expect(recentErrors(db, {})).toHaveLength(1);
     db.close();
   });
 });

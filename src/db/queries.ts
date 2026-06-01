@@ -376,7 +376,10 @@ export function recentErrors(db: Database.Database, filters: ErrorFilters = {}):
   const params: Record<string, unknown> = {};
 
   if (filters.sinceIso) {
-    clauses.push('top.started_at >= @since');
+    // Window on when the failure happened (its call time), not when the session
+    // started — otherwise a recent failure in a long-running session is missed.
+    // Fall back to the session start when a call has no timestamp.
+    clauses.push('COALESCE(t.called_at, top.started_at) >= @since');
     params.since = filters.sinceIso;
   }
   if (filters.project) {
@@ -597,7 +600,9 @@ export function reviewCandidates(
   sinceIso?: string | null,
   limit = 20,
 ): ReviewCandidate[] {
-  const where = sinceIso ? 'AND s.started_at >= @since' : '';
+  // Window on when the session was last *active* (its newest tool call), not when
+  // it started — so a long-running session with recent failures still surfaces.
+  const where = sinceIso ? 'AND COALESCE(la.last_at, s.started_at) >= @since' : '';
   const rows = db
     .prepare(
       `SELECT s.id AS session_id, s.ai_title, s.project_path, s.project_hash, s.started_at,
@@ -617,8 +622,11 @@ export function reviewCandidates(
            GROUP BY session_id, command
          ) GROUP BY session_id
        ) rf ON rf.session_id = s.id
+       LEFT JOIN (
+         SELECT session_id, MAX(called_at) AS last_at FROM tool_calls GROUP BY session_id
+       ) la ON la.session_id = s.id
        WHERE s.parent_session_id IS NULL ${where}
-       ORDER BY s.started_at DESC`,
+       ORDER BY COALESCE(la.last_at, s.started_at) DESC`,
     )
     .all(sinceIso ? { since: sinceIso } : {}) as (Omit<ReviewCandidate, 'errorRate' | 'flags'> & {
     durationMs: number | null;

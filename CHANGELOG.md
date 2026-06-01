@@ -4,6 +4,19 @@ All notable changes to **agentslog** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] — 2026-06-01
+
+### Fixed
+- **Time windows now track when activity happened, not when the session
+  started.** `errors`, the MCP `recent_errors` tool, and the `review` list
+  filtered `--last <window>` on each session's *start* time, so a recent failure
+  inside a long-running session (started days ago, still active) was missed — e.g.
+  `recent_errors --last 1h` could return nothing despite a failure seconds ago.
+  They now window on the tool call's time (`called_at`), falling back to the
+  session start only when a call has no timestamp. Session-scoped views (`stats`,
+  `sessions`, reasoning search, `impact`) are unchanged — "started in the window"
+  is the right semantic there.
+
 ## [0.5.0] — 2026-06-01
 
 The **adoption** release: one-command setup, and a way to see it working.
@@ -101,6 +114,7 @@ Initial release.
   database with a busy timeout, idempotent per-session writes, and storage in the
   OS app-data directory via `env-paths`.
 
+[0.5.1]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.5.1
 [0.5.0]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.5.0
 [0.4.1]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.4.1
 [0.4.0]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.4.0
