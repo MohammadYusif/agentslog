@@ -35,11 +35,13 @@ The transcripts hold all the answers. `agentslog` makes them instantly queryable
 
 ## 🚀 Quick Start
 
-Requires Node.js ≥ 20.
+Requires Node.js ≥ 20 and [pnpm](https://pnpm.io). _(npm package coming soon.)_
 
 ```bash
-# Install globally
-npm install -g agentslog
+# Install from source
+git clone https://github.com/MohammadYusif/agentslog.git
+cd agentslog
+pnpm install && pnpm build && pnpm link --global
 
 # Index your existing history (fast & idempotent)
 agentslog ingest
