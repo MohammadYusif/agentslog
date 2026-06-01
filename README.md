@@ -8,6 +8,7 @@
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg" alt="Node.js ≥20"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6.svg" alt="TypeScript"></a>
+  <a href="https://www.npmjs.com/package/agentslog"><img src="https://img.shields.io/npm/v/agentslog.svg" alt="npm version"></a>
   <a href="#-development"><img src="https://img.shields.io/badge/tests-92%20passing-brightgreen.svg" alt="92 tests passing"></a>
 </p>
 
@@ -35,13 +36,11 @@ The transcripts hold all the answers. `agentslog` makes them instantly queryable
 
 ## 🚀 Quick Start
 
-Requires Node.js ≥ 20 and [pnpm](https://pnpm.io). _(npm package coming soon.)_
+Requires Node.js ≥ 20.
 
 ```bash
-# Install from source
-git clone https://github.com/MohammadYusif/agentslog.git
-cd agentslog
-pnpm install && pnpm build && pnpm link --global
+# Install globally
+npm install -g agentslog
 
 # Index your existing history (fast & idempotent)
 agentslog ingest
