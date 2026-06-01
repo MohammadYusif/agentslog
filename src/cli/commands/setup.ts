@@ -32,28 +32,47 @@ You have the \`agentslog\` MCP server: a searchable index of your past coding-ag
 sessions (every tool call, file edit, error, and recorded lesson) across all
 projects on this machine. Use it to avoid repeating past mistakes.
 
-- **Before a tricky, slow, or destructive shell command**, call \`recent_errors\`
-  to check whether you (or a past session) already failed at it, and why.
+- **Before running a tricky, slow, or destructive shell command**, call
+  \`recent_errors\` (filter by tool/command) to check whether you — or a past
+  session — already failed at it, and why.
 - **Before editing a file you've struggled with**, call \`find_sessions_by_file\`
   to see what previously changed there and what broke.
-- **Check \`list_lessons\`** when unsure how to do something in a project.
-- **When you discover a non-obvious gotcha**, call \`record_lesson\` (with a short
-  exact \`trigger\`, e.g. \`ls -Recurse\`) so future sessions avoid the mistake.
+- **Check \`list_lessons\`** when unsure how to do something in this project — it
+  holds durable gotchas you've learned.
+- **When you discover a non-obvious gotcha or a clearly better approach**, call
+  \`record_lesson\` (with a short exact \`trigger\`, e.g. \`ls -Recurse\`) so future
+  sessions avoid the mistake.
+- Use \`search_reasoning\`, \`get_session\`, \`review_session\`, and \`get_stats\` when
+  you need the deeper "why", a full past run, an efficiency check, or spend.
+
+Prefer a quick agentslog lookup over re-deriving something you've already done.
 
 ### When something breaks, diagnose with agentslog first
 
-Treat agentslog as the first diagnostic step for any error or "this used to work"
-regression — before guessing or re-reading code. Chain the tools like a debugger:
+Treat agentslog as the first diagnostic step for *any* error, regression, or
+"this used to work" situation — before you start guessing or re-reading code
+from scratch. Your own history almost certainly contains the answer.
 
-- An **error or failed command** → \`recent_errors\` (filter by the failing tool
-  and project) to see if it happened before and how it was resolved.
-- A **file misbehaving** → \`find_sessions_by_file\`, then \`get_session\` on the
-  suspect run for its full tool-call trace.
-- **"It worked yesterday"** → find the last good run and \`get_session\` both to
-  compare what diverged.
-- **Before undoing past work** → \`search_reasoning\` to recover the original
-  intent so you don't reintroduce a bug a past session fixed.
-- **After the fix** → \`record_lesson\` so the next occurrence is caught instantly.`;
+1. **Reproduce the failure?** Call \`recent_errors\` (filter by the failing
+   \`tool\` and/or \`project\`) to see if this exact failure has happened before and
+   how it was resolved. A past session likely already paid this cost.
+2. **A file misbehaving?** Call \`find_sessions_by_file\` on it to see every prior
+   run that touched it — the change that introduced the bug is usually in there.
+   Open the suspect run with \`get_session\` for the full tool-call trace.
+3. **"It worked yesterday"?** Find the last good session (\`list_sessions\` /
+   \`find_sessions_by_tool\`) and \`get_session\` both runs to compare what diverged
+   — different tools, files, or more errors.
+4. **Unsure *why* a past approach was chosen** before you undo it? Use
+   \`search_reasoning\` to recall the original intent so you don't reintroduce a
+   bug a past session deliberately fixed.
+5. **After resolving it**, call \`record_lesson\` with a short exact \`trigger\` so
+   the next occurrence is caught instantly. If the run was messy, \`review_session\`
+   it to capture what made it inefficient.
+
+Use the full toolset, not just one tool — chain them (\`recent_errors\` →
+\`get_session\` → \`search_reasoning\`) the way you'd chain a debugger. The history
+is already on disk and free to query; reaching for it should be reflexive, not a
+last resort.`;
 
 /**
  * Insert or replace the managed agentslog block in an existing CLAUDE.md body.
