@@ -4,6 +4,28 @@ All notable changes to **agentslog** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-06-01
+
+The **adoption** release: one-command setup, and a way to see it working.
+
+### Added
+- **`agentslog setup`** — a transparent, idempotent installer that wires
+  agentslog into Claude Code automatically: registers the MCP server at user
+  scope (so *every* project gets it), writes a managed instruction block to
+  `~/.claude/CLAUDE.md`, and runs an initial ingest. Everything it changes is
+  printed. Components are individually selectable (`--no-mcp`, `--no-memory`,
+  `--with-hooks`, `--with-reasoning`, `--no-ingest`), with an interactive picker
+  (`-i`, Enter = recommended) and a `--dry-run` preview. Hardened: write-permission
+  preflight, tolerant `settings.json` parsing (survives comments / trailing
+  commas, never clobbers unparseable config), and a managed-block marker so the
+  memory edit is re-runnable and reversible.
+- **`agentslog impact`** — contrasts your agent activity *before* vs *after* you
+  started using agentslog (avg tool calls, tokens, error rate per session). The
+  cutover is auto-detected from the first session that called an `mcp__agentslog__*`
+  tool, falling back to the recorded setup date; `--since` overrides. Framed
+  honestly as a correlation, not a controlled experiment.
+- Schema **v5**: a small `meta` key/value table (stores the adoption timestamp).
+
 ## [0.4.1] — 2026-06-01
 
 ### Changed
@@ -79,6 +101,7 @@ Initial release.
   database with a busy timeout, idempotent per-session writes, and storage in the
   OS app-data directory via `env-paths`.
 
+[0.5.0]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.5.0
 [0.4.1]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.4.1
 [0.4.0]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.4.0
 [0.3.0]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.3.0

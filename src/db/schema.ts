@@ -2,7 +2,7 @@
  * SQLite schema definition and the current schema version.
  */
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -94,4 +94,9 @@ CREATE TABLE IF NOT EXISTS lessons (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_dedup ON lessons(scope, rule);
 CREATE INDEX IF NOT EXISTS idx_lessons_scope ON lessons(scope);
 CREATE INDEX IF NOT EXISTS idx_lessons_tool  ON lessons(tool);
+
+-- v5: small key/value store for installer + adoption metadata, e.g. 'setup_at'
+-- (when "agentslog setup" first ran) used as a fallback baseline for the
+-- before/after "impact" report.
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 `;

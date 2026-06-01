@@ -9,7 +9,7 @@
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg" alt="Node.js ≥20"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6.svg" alt="TypeScript"></a>
   <a href="https://www.npmjs.com/package/agentslog"><img src="https://img.shields.io/npm/v/agentslog.svg" alt="npm version"></a>
-  <a href="#-development"><img src="https://img.shields.io/badge/tests-92%20passing-brightgreen.svg" alt="92 tests passing"></a>
+  <a href="#-development"><img src="https://img.shields.io/badge/tests-109%20passing-brightgreen.svg" alt="109 tests passing"></a>
 </p>
 
 <p align="center"><strong>Your Claude Code history is a database. Query it like one.</strong></p>
@@ -48,6 +48,23 @@ agentslog ingest
 # Start querying!
 agentslog stats
 ```
+
+### Or wire everything up in one command
+
+`agentslog setup` does the whole thing automatically — registers the MCP server
+for **every** project, writes the memory instruction, and indexes your history —
+and **prints exactly what it changed**:
+
+```bash
+agentslog setup                 # MCP + global memory (zero-latency default)
+agentslog setup --with-hooks    # also install the error-avoidance + learning hooks
+agentslog setup -i              # pick each component (Enter = recommended)
+agentslog setup --dry-run       # preview every change, write nothing
+```
+
+Everything is opt-out (`--no-mcp`, `--no-memory`, `--no-ingest`) and idempotent —
+re-run it any time; it reports what's already configured. Open a fresh Claude Code
+session afterward and run `/mcp` to confirm.
 
 ```
 PERIOD      all time
@@ -293,9 +310,11 @@ the agent gets read tools — `recent_errors`, `find_sessions_by_file`,
 claude mcp add agentslog -- agentslog mcp        # this project only
 ```
 
-**Turn it on for _every_ project (global setup).** Register the server at **user
-scope** so every Claude Code session — in any repo — gets the tools, then add a
-short instruction to your global memory so the agent actually reaches for them:
+**Turn it on for _every_ project (global setup).** The easy way is one command —
+`agentslog setup` (see [Quick Start](#-quick-start)) does both steps below for
+you and prints what it changed. Prefer to do it by hand? Register the server at
+**user scope** so every Claude Code session gets the tools, then add a short
+instruction to your global memory so the agent actually reaches for them:
 
 ```bash
 # 1. Register once, globally (any project picks it up at startup)
@@ -339,6 +358,30 @@ debugger:
 > after registering, then run `/mcp` to confirm `agentslog` is connected. This
 > is the zero-latency path — no hooks required; the tools are simply available
 > and the memory instruction nudges the agent to use them.
+
+**Is it actually helping? (`agentslog impact`).** Once the agent has started
+using agentslog, this contrasts your activity **before vs after** adoption — the
+cutover is auto-detected from the first session that called an agentslog tool:
+
+```bash
+agentslog impact
+```
+
+```
+agentslog impact — before vs after adoption
+cutover: 2026-05-18 (first agentslog tool use)
+
+                             BEFORE      AFTER      Δ
+  Sessions                       40        37    —
+  Avg tool calls / session    188.4     151.0    -19.9%
+  Avg tokens / session       210.6k    176.2k    -16.3%
+  Error rate                   5.3%      3.1%    -41.5%
+  Avg errors / session         10.0       4.7    -53.0%
+```
+
+It's an honest **correlation**, not a controlled experiment — but it's a quick
+read on whether the agent is repeating fewer mistakes. Override the baseline with
+`--since 30d` / `--since 2026-01-01`, or add `--json` for scripting.
 
 **Recall the _why_, not just the _what_ (reasoning search).** Opt in to indexing
 the agent's thinking and search the reasoning behind past decisions:

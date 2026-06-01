@@ -779,3 +779,92 @@ export function recordLessonHit(db: Database.Database, ids: number[]): void {
   });
   tx(ids);
 }
+
+// ----------------------------------------------------------------------------
+// Meta key/value store + impact (before/after) analysis (v0.5)
+// ----------------------------------------------------------------------------
+
+/** Read a meta value by key, or null if unset. */
+export function getMeta(db: Database.Database, key: string): string | null {
+  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined;
+  return row ? row.value : null;
+}
+
+/** Upsert a meta value. */
+export function setMeta(db: Database.Database, key: string, value: string): void {
+  db.prepare(
+    'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+  ).run(key, value);
+}
+
+/** Set a meta value only if the key is currently unset. Returns the value in effect. */
+export function setMetaIfAbsent(db: Database.Database, key: string, value: string): string {
+  const existing = getMeta(db, key);
+  if (existing != null) return existing;
+  setMeta(db, key, value);
+  return value;
+}
+
+/**
+ * The earliest session start time at which the agent actually *used* agentslog —
+ * detected by an `mcp__agentslog__*` tool call in that session. This is the most
+ * honest "adoption" signal for the impact report. Null if never used.
+ */
+export function firstAgentslogUseIso(db: Database.Database): string | null {
+  const row = db
+    .prepare(
+      `SELECT MIN(s.started_at) AS iso
+       FROM sessions s
+       JOIN tool_calls t ON t.session_id = s.id
+       WHERE t.tool_name LIKE 'mcp\\_\\_agentslog\\_\\_%' ESCAPE '\\'`,
+    )
+    .get() as { iso: string | null };
+  return row.iso ?? null;
+}
+
+export interface WindowAggregate {
+  session_count: number;
+  tool_calls: number;
+  errors: number;
+  input_tokens: number;
+  output_tokens: number;
+  tokens: number;
+}
+
+/**
+ * Aggregate activity over a half-open time window `[fromIso, toIso)`. Either
+ * bound is optional. Counts only top-level sessions for `session_count` (so
+ * per-session averages aren't diluted by sub-agents) but sums tokens/tools/errors
+ * across every row, since sub-agent cost is real.
+ */
+export function aggregateWindow(
+  db: Database.Database,
+  bounds: { fromIso?: string | null; toIso?: string | null } = {},
+): WindowAggregate {
+  const clauses: string[] = [];
+  const params: Record<string, unknown> = {};
+  if (bounds.fromIso) {
+    clauses.push('started_at >= @from');
+    params.from = bounds.fromIso;
+  }
+  if (bounds.toIso) {
+    clauses.push('started_at < @to');
+    params.to = bounds.toIso;
+  }
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+  const row = db
+    .prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN parent_session_id IS NULL THEN 1 ELSE 0 END),0) AS session_count,
+         COALESCE(SUM(tool_call_count),0) AS tool_calls,
+         COALESCE(SUM(error_count),0)     AS errors,
+         COALESCE(SUM(input_tokens),0)    AS input_tokens,
+         COALESCE(SUM(output_tokens),0)   AS output_tokens,
+         COALESCE(SUM(input_tokens + output_tokens),0) AS tokens
+       FROM sessions ${where}`,
+    )
+    .get(params) as WindowAggregate;
+  return row;
+}

@@ -14,6 +14,25 @@ There are two integration surfaces, and they complement each other:
 
 ---
 
+## 0. The one-command path: `agentslog setup`
+
+Don't want to wire anything by hand? `agentslog setup` does it for you and prints
+exactly what it changed:
+
+```bash
+agentslog setup                 # MCP (user scope) + ~/.claude/CLAUDE.md memory; indexes history
+agentslog setup --with-hooks    # also install the hooks from section 2
+agentslog setup -i              # choose each component (Enter = recommended)
+agentslog setup --dry-run       # preview, write nothing
+```
+
+It's idempotent (re-run any time; it reports what's already configured), opt-out
+per component (`--no-mcp`, `--no-memory`, `--no-ingest`), and tolerant of
+comments/trailing commas in your `settings.json`. The sections below explain what
+each piece does if you'd rather configure them manually.
+
+---
+
 ## 1. MCP server
 
 Expose agentslog's read tools to any MCP-capable agent. For Claude Code:

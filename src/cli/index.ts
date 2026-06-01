@@ -16,6 +16,7 @@ import {
   runHookReflect,
   runHookSessionStart,
 } from './commands/hook.js';
+import { runImpact } from './commands/impact.js';
 import { runIngest } from './commands/ingest.js';
 import {
   runLessonAdd,
@@ -27,6 +28,7 @@ import { runQuery } from './commands/query.js';
 import { runReasoning } from './commands/reasoning.js';
 import { runReview } from './commands/review.js';
 import { runSessions } from './commands/sessions.js';
+import { runSetup } from './commands/setup.js';
 import { runShow } from './commands/show.js';
 import { runStats } from './commands/stats.js';
 import { runWatch } from './commands/watch.js';
@@ -36,7 +38,40 @@ const program = new Command();
 program
   .name('agentslog')
   .description('Query your Claude Code session history as a local SQLite database')
-  .version('0.4.1');
+  .version('0.5.0');
+
+program
+  .command('setup')
+  .description('Wire agentslog into Claude Code (MCP + memory; hooks optional)')
+  .option('--no-mcp', 'skip registering the MCP server')
+  .option('--no-memory', 'skip writing the ~/.claude/CLAUDE.md instruction')
+  .option('--with-hooks', 'also install PreToolUse/Stop/SessionStart hooks')
+  .option('--with-reasoning', 'index reasoning (thinking) blocks during the initial ingest')
+  .option('--no-ingest', 'skip the initial history ingest')
+  .option('-i, --interactive', 'choose each component with a prompt (Enter = recommended)')
+  .option('-y, --yes', 'assume defaults, no prompts')
+  .option('--dry-run', 'print what would change without writing anything')
+  .action(async (opts) => {
+    await runSetup({
+      mcp: opts.mcp,
+      memory: opts.memory,
+      withHooks: opts.withHooks,
+      withReasoning: opts.withReasoning,
+      ingest: opts.ingest,
+      interactive: opts.interactive,
+      yes: opts.yes,
+      dryRun: opts.dryRun,
+    });
+  });
+
+program
+  .command('impact')
+  .description('Compare your agent activity before vs after adopting agentslog')
+  .option('--since <window>', 'override the cutover: a window (e.g. 30d) or ISO date')
+  .option('--json', 'output raw JSON')
+  .action((opts) => {
+    runImpact({ since: opts.since, json: opts.json });
+  });
 
 program
   .command('ingest')

@@ -23,14 +23,30 @@ export function dbPath(): string {
 }
 
 /**
+ * The Claude configuration directory (`~/.claude`), honoring CLAUDE_CONFIG_DIR.
+ * Shared base for the projects dir, the global CLAUDE.md, and settings.json.
+ */
+export function claudeConfigDir(): string {
+  const override = process.env.CLAUDE_CONFIG_DIR;
+  return override && override.trim().length > 0 ? override : path.join(os.homedir(), '.claude');
+}
+
+/**
  * Absolute path to the Claude Code projects directory:
  * `~/.claude/projects`. Honors CLAUDE_CONFIG_DIR if set.
  */
 export function claudeProjectsDir(): string {
-  const override = process.env.CLAUDE_CONFIG_DIR;
-  const base =
-    override && override.trim().length > 0 ? override : path.join(os.homedir(), '.claude');
-  return path.join(base, 'projects');
+  return path.join(claudeConfigDir(), 'projects');
+}
+
+/** Absolute path to the global Claude memory file (`~/.claude/CLAUDE.md`). */
+export function globalClaudeMd(): string {
+  return path.join(claudeConfigDir(), 'CLAUDE.md');
+}
+
+/** Absolute path to the user-scope Claude settings (`~/.claude/settings.json`). */
+export function claudeSettingsPath(): string {
+  return path.join(claudeConfigDir(), 'settings.json');
 }
 
 /** The VS Code "User" directory that holds globalStorage, per platform. */
