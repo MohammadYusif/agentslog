@@ -10,10 +10,22 @@ import { Command } from 'commander';
 import { runDbVacuum } from './commands/db.js';
 import { runDiff } from './commands/diff.js';
 import { runErrors } from './commands/errors.js';
-import { runHookCheck, runHookIngest } from './commands/hook.js';
+import {
+  runHookCheck,
+  runHookIngest,
+  runHookReflect,
+  runHookSessionStart,
+} from './commands/hook.js';
 import { runIngest } from './commands/ingest.js';
+import {
+  runLessonAdd,
+  runLessonExport,
+  runLessonRemove,
+  runLessonsList,
+} from './commands/lesson.js';
 import { runQuery } from './commands/query.js';
 import { runReasoning } from './commands/reasoning.js';
+import { runReview } from './commands/review.js';
 import { runSessions } from './commands/sessions.js';
 import { runShow } from './commands/show.js';
 import { runStats } from './commands/stats.js';
@@ -24,7 +36,7 @@ const program = new Command();
 program
   .name('agentslog')
   .description('Query your Claude Code session history as a local SQLite database')
-  .version('0.3.0');
+  .version('0.4.0');
 
 program
   .command('ingest')
@@ -100,6 +112,17 @@ program
   });
 
 program
+  .command('review')
+  .description('Flag sessions that ran inefficiently (failures, repeats, token spend)')
+  .argument('[id-prefix]', 'review one session by id prefix; omit to list flagged sessions')
+  .option('--last <window>', 'restrict to a time window, e.g. 7d')
+  .option('--limit <n>', 'maximum flagged sessions to list (default 20)')
+  .option('--json', 'output raw JSON')
+  .action((idPrefix, opts) => {
+    runReview(idPrefix, opts);
+  });
+
+program
   .command('reasoning')
   .description('Full-text search the indexed reasoning (thinking) blocks')
   .argument('<query>', 'words to search for in past reasoning')
@@ -116,6 +139,43 @@ program
   .option('--no-initial', 'skip the initial full ingest before watching')
   .action(async (opts) => {
     await runWatch({ noInitial: opts.initial === false });
+  });
+
+program
+  .command('lessons')
+  .description('List the durable lessons agentslog has learned')
+  .option('--project', 'only lessons for the current project (plus global)')
+  .option('--global', 'only global lessons')
+  .option('--json', 'output raw JSON')
+  .action((opts) => {
+    runLessonsList(opts);
+  });
+
+const lesson = program.command('lesson').description('Manage learned lessons');
+lesson
+  .command('add')
+  .description('Record a lesson by hand')
+  .requiredOption('--rule <text>', 'the lesson to remember')
+  .option('--tool <name>', 'tool the lesson concerns (e.g. Bash)')
+  .option('--trigger <str>', 'short exact command/file this applies to (e.g. "ls -Recurse")')
+  .option('--rationale <text>', 'why / evidence')
+  .option('--project', 'scope to the current project instead of global')
+  .action((opts) => {
+    runLessonAdd(opts);
+  });
+lesson
+  .command('rm')
+  .description('Delete a lesson by id')
+  .argument('<id>', 'lesson id')
+  .action((id) => {
+    runLessonRemove(id);
+  });
+lesson
+  .command('export')
+  .description('Print lessons as markdown to paste into CLAUDE.md')
+  .option('--project', 'only lessons for the current project')
+  .action((opts) => {
+    runLessonExport(opts);
   });
 
 const db = program.command('db').description('Database maintenance');
@@ -148,6 +208,18 @@ hook
   .description('Stop/SessionEnd: refresh the index so history stays current')
   .action(async () => {
     await runHookIngest();
+  });
+hook
+  .command('reflect')
+  .description('Stop: refresh, then auto-record lessons from repeated failures')
+  .action(async () => {
+    await runHookReflect();
+  });
+hook
+  .command('session-start')
+  .description('SessionStart: surface relevant lessons + nudge after inefficient runs')
+  .action(async () => {
+    await runHookSessionStart();
   });
 
 program.parseAsync(process.argv).catch((err) => {

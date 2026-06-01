@@ -467,3 +467,315 @@ export function searchReasoning(
   `;
   return db.prepare(sql).all(params) as ReasoningHit[];
 }
+
+// ----------------------------------------------------------------------------
+// Review / efficiency detection (v0.4)
+// ----------------------------------------------------------------------------
+
+/** Tunable thresholds for the deterministic inefficiency flags. */
+export const REVIEW_THRESHOLDS = {
+  /** Min tool calls before an error rate is meaningful. */
+  minToolCallsForErrorRate: 5,
+  /** Fraction of tool calls that failed to flag `high_error_rate`. */
+  errorRate: 0.3,
+  /** Identical failed command repeated this many times → `repeated_failure`. */
+  repeatedFailure: 3,
+  /** Tokens with zero reads AND zero changes → `high_spend_no_activity`. */
+  highSpendTokens: 30_000,
+  /** Tokens per change above this (with ≥1 change) → `high_tokens_per_change`. */
+  tokensPerChange: 50_000,
+};
+
+/** Raw efficiency metrics for one session. */
+export interface EfficiencyMetrics {
+  toolCalls: number;
+  errors: number;
+  errorRate: number;
+  reads: number;
+  writes: number;
+  edits: number;
+  tokens: number;
+  durationMs: number | null;
+  /** Highest identical-failed-command repeat count in the session. */
+  maxRepeat: number;
+}
+
+/**
+ * Compute inefficiency flags from metrics. Flags are heuristic *candidates*,
+ * not verdicts. `high_spend_no_activity` deliberately requires zero reads too,
+ * so a legitimate deep research/plan phase (lots of reading, no edits) is not
+ * punished.
+ */
+export function computeFlags(m: EfficiencyMetrics): string[] {
+  const flags: string[] = [];
+  const t = REVIEW_THRESHOLDS;
+  const changes = m.writes + m.edits;
+  if (m.toolCalls >= t.minToolCallsForErrorRate && m.errorRate >= t.errorRate) {
+    flags.push('high_error_rate');
+  }
+  if (m.maxRepeat >= t.repeatedFailure) flags.push('repeated_failure');
+  if (m.tokens >= t.highSpendTokens && changes === 0 && m.reads === 0) {
+    flags.push('high_spend_no_activity');
+  }
+  if (changes > 0 && m.tokens / changes >= t.tokensPerChange) {
+    flags.push('high_tokens_per_change');
+  }
+  return flags;
+}
+
+export interface RepeatedFailure {
+  command: string;
+  count: number;
+  error_text: string | null;
+}
+
+/** Identical commands that failed two or more times in a session, worst first. */
+export function repeatedFailures(db: Database.Database, sessionId: string): RepeatedFailure[] {
+  return db
+    .prepare(
+      `SELECT command, COUNT(*) AS count, MAX(error_text) AS error_text
+       FROM tool_calls
+       WHERE session_id = ? AND success = 0 AND command IS NOT NULL AND command != ''
+       GROUP BY command
+       HAVING count >= 2
+       ORDER BY count DESC, command ASC`,
+    )
+    .all(sessionId) as RepeatedFailure[];
+}
+
+export interface SessionEfficiency extends EfficiencyMetrics {
+  sessionId: string;
+  flags: string[];
+  repeated: RepeatedFailure[];
+}
+
+/** Full efficiency report for one session, or null if it doesn't exist. */
+export function sessionEfficiency(
+  db: Database.Database,
+  sessionId: string,
+): SessionEfficiency | null {
+  const row = db
+    .prepare(
+      `SELECT s.tool_call_count AS toolCalls, s.error_count AS errors,
+              (s.input_tokens + s.output_tokens) AS tokens, s.duration_ms AS durationMs,
+              COALESCE(ft.reads,0) AS reads, COALESCE(ft.writes,0) AS writes,
+              COALESCE(ft.edits,0) AS edits
+       FROM sessions s
+       LEFT JOIN (
+         SELECT session_id, SUM(read_count) reads, SUM(write_count) writes, SUM(edit_count) edits
+         FROM files_touched GROUP BY session_id
+       ) ft ON ft.session_id = s.id
+       WHERE s.id = ?`,
+    )
+    .get(sessionId) as
+    | (Omit<EfficiencyMetrics, 'errorRate' | 'maxRepeat'> & { durationMs: number | null })
+    | undefined;
+  if (!row) return null;
+
+  const repeated = repeatedFailures(db, sessionId);
+  const errorRate = row.toolCalls > 0 ? row.errors / row.toolCalls : 0;
+  const maxRepeat = repeated.length > 0 ? repeated[0].count : 0;
+  const metrics: EfficiencyMetrics = { ...row, errorRate, maxRepeat };
+  return { sessionId, ...metrics, flags: computeFlags(metrics), repeated };
+}
+
+export interface ReviewCandidate extends EfficiencyMetrics {
+  session_id: string;
+  ai_title: string | null;
+  project_path: string | null;
+  project_hash: string;
+  started_at: string;
+  flags: string[];
+}
+
+/**
+ * Top-level sessions in a window whose efficiency trips at least one flag,
+ * most-flagged first. One query + in-JS scoring (cheap at this scale).
+ */
+export function reviewCandidates(
+  db: Database.Database,
+  sinceIso?: string | null,
+  limit = 20,
+): ReviewCandidate[] {
+  const where = sinceIso ? 'AND s.started_at >= @since' : '';
+  const rows = db
+    .prepare(
+      `SELECT s.id AS session_id, s.ai_title, s.project_path, s.project_hash, s.started_at,
+              s.tool_call_count AS toolCalls, s.error_count AS errors,
+              (s.input_tokens + s.output_tokens) AS tokens, s.duration_ms AS durationMs,
+              COALESCE(ft.reads,0) AS reads, COALESCE(ft.writes,0) AS writes,
+              COALESCE(ft.edits,0) AS edits, COALESCE(rf.max_repeat,0) AS maxRepeat
+       FROM sessions s
+       LEFT JOIN (
+         SELECT session_id, SUM(read_count) reads, SUM(write_count) writes, SUM(edit_count) edits
+         FROM files_touched GROUP BY session_id
+       ) ft ON ft.session_id = s.id
+       LEFT JOIN (
+         SELECT session_id, MAX(n) AS max_repeat FROM (
+           SELECT session_id, command, COUNT(*) AS n FROM tool_calls
+           WHERE success = 0 AND command IS NOT NULL AND command != ''
+           GROUP BY session_id, command
+         ) GROUP BY session_id
+       ) rf ON rf.session_id = s.id
+       WHERE s.parent_session_id IS NULL ${where}
+       ORDER BY s.started_at DESC`,
+    )
+    .all(sinceIso ? { since: sinceIso } : {}) as (Omit<ReviewCandidate, 'errorRate' | 'flags'> & {
+    durationMs: number | null;
+  })[];
+
+  const out: ReviewCandidate[] = [];
+  for (const r of rows) {
+    const errorRate = r.toolCalls > 0 ? r.errors / r.toolCalls : 0;
+    const metrics: EfficiencyMetrics = { ...r, errorRate };
+    const flags = computeFlags(metrics);
+    if (flags.length > 0) out.push({ ...r, errorRate, flags });
+  }
+  out.sort((a, b) => b.flags.length - a.flags.length);
+  return out.slice(0, limit);
+}
+
+// ----------------------------------------------------------------------------
+// Lessons store (v0.4)
+// ----------------------------------------------------------------------------
+
+export interface LessonRow {
+  id: number;
+  created_at: string;
+  source: string;
+  scope: string;
+  tool: string | null;
+  trigger: string | null;
+  rule: string;
+  rationale: string | null;
+  source_session_id: string | null;
+  confidence: number;
+  hits: number;
+  last_hit_at: string | null;
+}
+
+export interface LessonInput {
+  rule: string;
+  scope?: string;
+  tool?: string | null;
+  trigger?: string | null;
+  rationale?: string | null;
+  source?: string;
+  sourceSessionId?: string | null;
+  confidence?: number;
+}
+
+/**
+ * Insert a lesson, de-duplicating on (scope, rule): a repeat keeps the higher
+ * confidence and fills any missing tool/trigger/rationale. Returns the row id.
+ */
+export function insertLesson(db: Database.Database, input: LessonInput): number {
+  const row = db
+    .prepare(
+      `INSERT INTO lessons
+         (created_at, source, scope, tool, trigger, rule, rationale, source_session_id, confidence)
+       VALUES
+         (@createdAt, @source, @scope, @tool, @trigger, @rule, @rationale, @sourceSessionId, @confidence)
+       ON CONFLICT(scope, rule) DO UPDATE SET
+         confidence = MAX(lessons.confidence, excluded.confidence),
+         tool       = COALESCE(excluded.tool, lessons.tool),
+         trigger    = COALESCE(excluded.trigger, lessons.trigger),
+         rationale  = COALESCE(excluded.rationale, lessons.rationale)
+       RETURNING id`,
+    )
+    .get({
+      createdAt: new Date().toISOString(),
+      source: input.source ?? 'agent',
+      scope: input.scope ?? 'global',
+      tool: input.tool ?? null,
+      trigger: input.trigger ?? null,
+      rule: input.rule,
+      rationale: input.rationale ?? null,
+      sourceSessionId: input.sourceSessionId ?? null,
+      confidence: input.confidence ?? 0.8,
+    }) as { id: number };
+  return row.id;
+}
+
+/** List lessons, optionally scoped to a project (plus 'global') or one scope. */
+export function listLessons(
+  db: Database.Database,
+  filters: { scope?: string | null; includeGlobal?: boolean } = {},
+): LessonRow[] {
+  if (filters.scope) {
+    const scopes = filters.includeGlobal !== false ? [filters.scope, 'global'] : [filters.scope];
+    const placeholders = scopes.map(() => '?').join(', ');
+    return db
+      .prepare(
+        `SELECT * FROM lessons WHERE scope IN (${placeholders})
+         ORDER BY hits DESC, confidence DESC, id DESC`,
+      )
+      .all(...scopes) as LessonRow[];
+  }
+  return db
+    .prepare('SELECT * FROM lessons ORDER BY hits DESC, confidence DESC, id DESC')
+    .all() as LessonRow[];
+}
+
+/** Delete a lesson by id. Returns true if a row was removed. */
+export function removeLesson(db: Database.Database, id: number): boolean {
+  return db.prepare('DELETE FROM lessons WHERE id = ?').run(id).changes > 0;
+}
+
+export interface LessonContext {
+  /** Project scope key (the normalized working directory). */
+  project: string;
+  tool?: string | null;
+  command?: string | null;
+  file?: string | null;
+  limit?: number | null;
+}
+
+/**
+ * Recall lessons relevant to the current project and (optionally) an imminent
+ * action. With a command/file, only lessons whose `trigger` is null or appears
+ * in that command/file are returned; with none (e.g. at session start), the top
+ * scoped lessons are returned. Ordered by `hits` then `confidence`.
+ */
+export function lessonsForContext(db: Database.Database, ctx: LessonContext): LessonRow[] {
+  const clauses = ['scope IN (@proj, @global)'];
+  const params: Record<string, unknown> = { proj: ctx.project, global: 'global' };
+
+  if (ctx.tool) {
+    clauses.push('(tool IS NULL OR tool = @tool COLLATE NOCASE)');
+    params.tool = ctx.tool;
+  }
+
+  const hasAction = Boolean(ctx.command || ctx.file);
+  if (hasAction) {
+    const subs: string[] = ['trigger IS NULL'];
+    if (ctx.command) {
+      subs.push('instr(lower(@command), lower(trigger)) > 0');
+      params.command = ctx.command;
+    }
+    if (ctx.file) {
+      subs.push('instr(lower(@file), lower(trigger)) > 0');
+      params.file = ctx.file;
+    }
+    clauses.push(`(${subs.join(' OR ')})`);
+  }
+
+  const limit = ctx.limit && ctx.limit > 0 ? Math.floor(ctx.limit) : 5;
+  return db
+    .prepare(
+      `SELECT * FROM lessons WHERE ${clauses.join(' AND ')}
+       ORDER BY hits DESC, confidence DESC, id DESC LIMIT ${limit}`,
+    )
+    .all(params) as LessonRow[];
+}
+
+/** Bump the recall counters for lessons that were surfaced. */
+export function recordLessonHit(db: Database.Database, ids: number[]): void {
+  if (ids.length === 0) return;
+  const now = new Date().toISOString();
+  const stmt = db.prepare('UPDATE lessons SET hits = hits + 1, last_hit_at = ? WHERE id = ?');
+  const tx = db.transaction((rows: number[]) => {
+    for (const id of rows) stmt.run(now, id);
+  });
+  tx(ids);
+}
