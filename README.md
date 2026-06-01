@@ -527,13 +527,15 @@ in the app-data directory or the `AGENTSLOG_PRICING` env var.
 
 ---
 
-## ⚠️ Limitations (v0.2)
+## ⚠️ Limitations
 
 * **Cline & Aider are experimental.** Their parsers are validated against real
   sample transcripts and Cline's published schema, but not across every version
   and config—Claude Code remains the fully-supported path.
 * **Cost is an estimate.** Figures use per-model list prices, not your actual
   invoice; prices change and historical sessions may have been billed differently.
+* **`impact` is a correlation.** The before/after comparison reflects how your
+  activity changed around adoption—not a controlled experiment proving causation.
 * **Terminal only.** Plain colored output—no web UI or TUI.
 
 ---
