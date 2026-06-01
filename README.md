@@ -290,8 +290,39 @@ the agent gets read tools — `recent_errors`, `find_sessions_by_file`,
 `search_reasoning`, and more — to consult its own past on demand:
 
 ```bash
-claude mcp add agentslog -- agentslog mcp
+claude mcp add agentslog -- agentslog mcp        # this project only
 ```
+
+**Turn it on for _every_ project (global setup).** Register the server at **user
+scope** so every Claude Code session — in any repo — gets the tools, then add a
+short instruction to your global memory so the agent actually reaches for them:
+
+```bash
+# 1. Register once, globally (any project picks it up at startup)
+claude mcp add agentslog --scope user -- agentslog mcp
+```
+
+```md
+<!-- 2. Add to ~/.claude/CLAUDE.md so the agent uses the tools by reflex -->
+## agentslog — your own coding history
+
+You have the `agentslog` MCP server: a searchable index of your past
+coding-agent sessions across every project on this machine. Use it to avoid
+repeating past mistakes.
+
+- **Before a tricky, slow, or destructive shell command**, call `recent_errors`
+  to check whether you (or a past session) already failed at it, and why.
+- **Before editing a file you've struggled with**, call `find_sessions_by_file`
+  to see what changed there before and what broke.
+- **Check `list_lessons`** when unsure how to do something in a project.
+- **When you hit a non-obvious gotcha**, call `record_lesson` (with a short
+  exact `trigger`, e.g. `ls -Recurse`) so future sessions avoid it.
+```
+
+> MCP servers load at **session start**, so open a fresh Claude Code session
+> after registering, then run `/mcp` to confirm `agentslog` is connected. This
+> is the zero-latency path — no hooks required; the tools are simply available
+> and the memory instruction nudges the agent to use them.
 
 **Recall the _why_, not just the _what_ (reasoning search).** Opt in to indexing
 the agent's thinking and search the reasoning behind past decisions:

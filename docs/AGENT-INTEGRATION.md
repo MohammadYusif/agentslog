@@ -19,7 +19,7 @@ There are two integration surfaces, and they complement each other:
 Expose agentslog's read tools to any MCP-capable agent. For Claude Code:
 
 ```bash
-claude mcp add agentslog -- agentslog mcp
+claude mcp add agentslog -- agentslog mcp        # this project only
 ```
 
 This registers a server that, on start, refreshes the index and then serves
@@ -38,6 +38,40 @@ concurrent write (e.g. the `Stop` hook below) — WAL mode handles the rest.
 
 Pass `--no-ingest` to skip the on-start refresh (e.g. if a `watch` daemon or the
 `Stop` hook already keeps the index current).
+
+### Make it global — every project, zero latency
+
+Register the server at **user scope** so *every* Claude Code session, in any
+repo, gets the tools — then add a short instruction to your global memory so the
+agent actually reaches for them:
+
+```bash
+# 1. Register once, globally (any project picks it up at startup)
+claude mcp add agentslog --scope user -- agentslog mcp
+```
+
+```md
+<!-- 2. Add to ~/.claude/CLAUDE.md so the agent uses the tools by reflex -->
+## agentslog — your own coding history
+
+You have the `agentslog` MCP server: a searchable index of your past
+coding-agent sessions across every project on this machine. Use it to avoid
+repeating past mistakes.
+
+- **Before a tricky, slow, or destructive shell command**, call `recent_errors`
+  to check whether you (or a past session) already failed at it, and why.
+- **Before editing a file you've struggled with**, call `find_sessions_by_file`
+  to see what changed there before and what broke.
+- **Check `list_lessons`** when unsure how to do something in a project.
+- **When you hit a non-obvious gotcha**, call `record_lesson` (with a short
+  exact `trigger`, e.g. `ls -Recurse`) so future sessions avoid it.
+```
+
+MCP servers load at **session start**, so open a fresh session after registering
+and run `/mcp` to confirm `agentslog` is connected. This is the no-hooks path:
+the tools are simply available everywhere, and the memory instruction nudges the
+agent to use them. Add the hooks below only if you also want the *push*-side
+warnings and auto-learning.
 
 ---
 
@@ -146,7 +180,8 @@ file. They surface again at `PreToolUse` (matching the action) and `SessionStart
 
 A complete "agent that remembers and learns" setup:
 
-1. `claude mcp add agentslog -- agentslog mcp`
+1. `claude mcp add agentslog --scope user -- agentslog mcp` (global) + the
+   `~/.claude/CLAUDE.md` instruction above, so every project uses it by reflex.
 2. The `PreToolUse` + `Stop` (`reflect`) + `SessionStart` hooks above.
 3. `AGENTSLOG_INDEX_REASONING=1` in your shell profile (optional, for the *why*).
 
