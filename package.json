@@ -42,7 +42,8 @@
     "lint": "biome lint src test",
     "format": "biome format --write src test",
     "check": "biome check src test",
-    "check:fix": "biome check --write src test"
+    "check:fix": "biome check --write src test",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
