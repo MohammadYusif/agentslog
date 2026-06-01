@@ -1,0 +1,24 @@
+# What ships is controlled by the "files" allowlist in package.json (dist only).
+# This file exists to make exclusions explicit and silence npm's gitignore
+# fallback warning.
+
+# Source & tests — only the built dist/ is published.
+src/
+test/
+
+# Tooling & config
+.github/
+docs/
+biome.json
+tsconfig.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+.gitattributes
+.editorconfig
+
+# Local artifacts
+*.log
+*.db
+*.db-shm
+*.db-wal
+coverage/
