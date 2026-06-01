@@ -8,13 +8,16 @@
  */
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
+import { recordLessonStandalone } from '../db/index.js';
 import {
   childSessions,
   filesForSession,
+  lessonsForContext,
   listSessions,
   recentErrors,
   resolveSession,
   searchReasoning,
+  sessionEfficiency,
   sessionsByFile,
   sessionsByTool,
   statsTotals,
@@ -23,8 +26,14 @@ import {
   topFiles,
   topTools,
 } from '../db/queries.js';
+import { normalizePath } from '../parser/claude-code.js';
 import { estimateCost } from '../utils/pricing.js';
 import { windowCutoffIso } from '../utils/time.js';
+
+/** The project scope key for the directory the MCP server runs in. */
+function currentProject(): string {
+  return normalizePath(process.cwd());
+}
 
 const lastDesc =
   'Optional time window: a number followed by s/m/h/d/w (e.g. "7d", "24h", "2w"). Omit for all time.';
@@ -168,5 +177,71 @@ export const MCP_TOOLS: McpTool[] = [
         sinceIso: windowCutoffIso(a.last as string | undefined),
         limit: (a.limit as number) ?? 20,
       }),
+  },
+  {
+    name: 'list_lessons',
+    title: 'List recorded lessons',
+    description:
+      'List the durable lessons recorded for this project (and global ones) — the gotchas and better-approaches you and past sessions have learned. Consult these when unsure how to do something here.',
+    schema: {
+      limit: z.number().int().positive().max(100).optional().describe('Max lessons (default 25).'),
+    },
+    handler: (db, a) =>
+      lessonsForContext(db, { project: currentProject(), limit: (a.limit as number) ?? 25 }),
+  },
+  {
+    name: 'review_session',
+    title: 'Review a session for inefficiency',
+    description:
+      'Inspect how efficiently a past session ran — failure rate, repeated identical failures, and token spend, with heuristic flags. Use it to self-assess a run before recording a lesson.',
+    schema: {
+      id: z.string().describe('A session id or unique prefix.'),
+    },
+    handler: (db, a) => {
+      const session = resolveSession(db, a.id as string);
+      if (!session) return { error: `No session matches "${a.id}".` };
+      return sessionEfficiency(db, session.id);
+    },
+  },
+  {
+    name: 'record_lesson',
+    title: 'Record a durable lesson',
+    description:
+      'After you discover a non-obvious gotcha or a clearly better approach, record it here so future sessions avoid the mistake. Record only durable, generalizable lessons — not one-off facts.',
+    schema: {
+      rule: z
+        .string()
+        .describe(
+          'The lesson, phrased as a durable instruction, e.g. "On Windows use Get-ChildItem, not ls -Recurse".',
+        ),
+      tool: z
+        .string()
+        .optional()
+        .describe('The tool this lesson concerns, e.g. "Bash", "Edit". Helps targeted recall.'),
+      trigger: z
+        .string()
+        .optional()
+        .describe(
+          'The exact command or file this lesson applies to. MUST be a short exact-match string, e.g. `ls -Recurse`, `src/auth.ts`, `prisma migrate`. Do NOT write a sentence.',
+        ),
+      rationale: z.string().optional().describe('Brief why / evidence (optional).'),
+      scope: z
+        .enum(['project', 'global'])
+        .optional()
+        .describe('"project" (default) limits it to this repo; "global" applies everywhere.'),
+    },
+    // Write tool: ignores the read-only handle and uses a short-lived writable one.
+    handler: (_db, a) => {
+      const id = recordLessonStandalone({
+        rule: a.rule as string,
+        tool: (a.tool as string) ?? null,
+        trigger: (a.trigger as string) ?? null,
+        rationale: (a.rationale as string) ?? null,
+        source: 'agent',
+        scope: a.scope === 'global' ? 'global' : currentProject(),
+        confidence: 0.9,
+      });
+      return { recorded: true, id };
+    },
   },
 ];

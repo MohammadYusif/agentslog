@@ -8,7 +8,7 @@
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg" alt="Node.js ≥20"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6.svg" alt="TypeScript"></a>
-  <a href="#-development"><img src="https://img.shields.io/badge/tests-72%20passing-brightgreen.svg" alt="72 tests passing"></a>
+  <a href="#-development"><img src="https://img.shields.io/badge/tests-92%20passing-brightgreen.svg" alt="92 tests passing"></a>
 </p>
 
 <p align="center"><strong>Your Claude Code history is a database. Query it like one.</strong></p>
@@ -300,7 +300,21 @@ agentslog ingest --reasoning
 agentslog reasoning "why natural sort"
 ```
 
-Full setup — hooks, MCP, and reasoning indexing — is in
+**Learn from its own mistakes (self-improvement).** agentslog flags inefficient
+runs and turns them into durable *lessons* — recorded automatically on repeated
+failures, by the agent via an MCP tool, or by you — then recalls them before the
+agent repeats itself:
+
+```bash
+agentslog review --last 7d                      # which runs were inefficient, and why
+agentslog lesson add --rule "Use Get-ChildItem, not ls -Recurse" --trigger "ls -Recurse"
+agentslog lessons                               # the rules it has learned
+```
+
+Lessons live only in your local DB (never auto-written to `CLAUDE.md`) and
+resurface at `PreToolUse` and `SessionStart`.
+
+Full setup — hooks, MCP, reasoning indexing, and the learning loop — is in
 **[docs/AGENT-INTEGRATION.md](docs/AGENT-INTEGRATION.md)**.
 
 ---

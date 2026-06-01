@@ -59,13 +59,16 @@ function makeSession(overrides: Partial<ParsedSession> = {}): ParsedSession {
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentslog-mcp-'));
   dbFile = path.join(dir, 'db.sqlite');
+  // Point the standalone lesson writer (record_lesson) at the same temp db.
+  process.env.AGENTSLOG_DB = dbFile;
 });
 afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
+  delete process.env.AGENTSLOG_DB;
 });
 
 describe('MCP tool registry', () => {
-  it('exposes all 7 tools, each with a non-empty description (the agent reads these)', () => {
+  it('exposes all tools, each with a non-empty description (the agent reads these)', () => {
     const names = MCP_TOOLS.map((t) => t.name).sort();
     expect(names).toEqual(
       [
@@ -73,8 +76,11 @@ describe('MCP tool registry', () => {
         'find_sessions_by_tool',
         'get_session',
         'get_stats',
+        'list_lessons',
         'list_sessions',
         'recent_errors',
+        'record_lesson',
+        'review_session',
         'search_reasoning',
       ].sort(),
     );
@@ -96,6 +102,35 @@ describe('MCP tool registry', () => {
     expect(detail.session.id).toBe('sess-1');
     const reasoning = byName.search_reasoning.handler(d, { query: 'streaming' }) as unknown[];
     expect(reasoning.length).toBe(1);
+    d.close();
+  });
+
+  it('record_lesson writes (short-lived conn) and list_lessons reads it back', () => {
+    const d = db();
+    const byName = Object.fromEntries(MCP_TOOLS.map((t) => [t.name, t]));
+    const res = byName.record_lesson.handler(d, {
+      rule: 'Use Get-ChildItem on Windows',
+      tool: 'Bash',
+      trigger: 'ls -Recurse',
+      scope: 'global',
+    }) as { recorded: boolean; id: number };
+    expect(res.recorded).toBe(true);
+
+    // Fresh read connection sees the row the standalone writer committed.
+    const d2 = db();
+    const lessons = byName.list_lessons.handler(d2, {}) as { rule: string }[];
+    expect(lessons.map((l) => l.rule)).toContain('Use Get-ChildItem on Windows');
+    d.close();
+    d2.close();
+  });
+
+  it('review_session returns an efficiency report', () => {
+    const d = db();
+    writeSession(d, makeSession());
+    const byName = Object.fromEntries(MCP_TOOLS.map((t) => [t.name, t]));
+    const report = byName.review_session.handler(d, { id: 'sess-1' }) as { flags: string[] } | null;
+    expect(report).not.toBeNull();
+    expect(Array.isArray(report?.flags)).toBe(true);
     d.close();
   });
 });

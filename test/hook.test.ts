@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildAdvisory } from '../src/cli/commands/hook.js';
+import { buildAdvisory, reflectOnSession } from '../src/cli/commands/hook.js';
 import { openDb, writeSession } from '../src/db/index.js';
+import { insertLesson, listLessons } from '../src/db/queries.js';
 import type { ParsedSession } from '../src/parser/types.js';
 
 let dir: string;
@@ -96,6 +97,86 @@ describe('hook check — buildAdvisory', () => {
     const db = openDb(dbFile);
     writeSession(db, sessionWithFailure('ls -Recurse', null));
     expect(buildAdvisory(db, { tool_name: 'WebSearch', tool_input: {} })).toBeNull();
+    db.close();
+  });
+
+  it('surfaces a matching recorded lesson alongside (or without) past errors', () => {
+    const db = openDb(dbFile);
+    insertLesson(db, {
+      rule: 'Use Get-ChildItem on Windows',
+      scope: 'global',
+      tool: 'Bash',
+      trigger: 'ls -Recurse',
+      source: 'user',
+    });
+    const adv = buildAdvisory(db, {
+      tool_name: 'Bash',
+      tool_input: { command: 'ls -Recurse build' },
+      cwd: '/repo',
+    });
+    expect(adv?.hookSpecificOutput.additionalContext).toContain('Get-ChildItem');
+    expect(adv?.hookSpecificOutput.additionalContext).toContain('Lesson');
+    db.close();
+  });
+});
+
+describe('reflectOnSession — auto-lessons', () => {
+  it('records a lesson for a command that failed 3+ times, and dedupes', () => {
+    const db = openDb(dbFile);
+    writeSession(
+      db,
+      sessionWithFailure('ls -Recurse', null), // helper makes 1 failure; add more below
+    );
+    // Replace with a session that has 3 identical failures.
+    writeSession(db, {
+      ...sessionWithFailure('ls -Recurse', null),
+      id: 'sess-1',
+      toolCallCount: 3,
+      errorCount: 3,
+      toolCalls: [0, 1, 2].map((i) => ({
+        id: String(i),
+        sequenceNum: i,
+        toolName: 'Bash' as const,
+        calledAt: '2026-01-05T00:01:00Z',
+        success: false,
+        filePath: null,
+        command: 'ls -Recurse',
+        errorText: 'unknown option -- e',
+      })),
+    });
+
+    const n = reflectOnSession(db, 'sess-1');
+    expect(n).toBe(1);
+    const lessons = listLessons(db, {});
+    expect(lessons).toHaveLength(1);
+    expect(lessons[0].source).toBe('auto');
+    expect(lessons[0].rule).toContain('failed 3×');
+
+    // Re-reflecting does not duplicate.
+    reflectOnSession(db, 'sess-1');
+    expect(listLessons(db, {})).toHaveLength(1);
+    db.close();
+  });
+
+  it('does not record a lesson when failures are below the threshold', () => {
+    const db = openDb(dbFile);
+    writeSession(db, {
+      ...sessionWithFailure('x', null),
+      id: 'few',
+      toolCallCount: 2,
+      errorCount: 2,
+      toolCalls: [0, 1].map((i) => ({
+        id: String(i),
+        sequenceNum: i,
+        toolName: 'Bash' as const,
+        calledAt: null,
+        success: false,
+        filePath: null,
+        command: 'flaky',
+        errorText: 'e',
+      })),
+    });
+    expect(reflectOnSession(db, 'few')).toBe(0);
     db.close();
   });
 });

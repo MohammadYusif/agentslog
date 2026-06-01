@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import type { ParsedSession } from '../parser/types.js';
 import { dbPath } from '../utils/paths.js';
 import { migrate } from './migrate.js';
+import { insertLesson, type LessonInput } from './queries.js';
 
 let singleton: Database.Database | null = null;
 
@@ -52,6 +53,25 @@ export function openDbReadonly(): Database.Database {
   const db = new Database(file, { readonly: true });
   db.pragma('busy_timeout = 5000');
   return db;
+}
+
+/**
+ * Record a lesson over a **short-lived** writable connection, then close it
+ * immediately. Used by the MCP `record_lesson` tool so the server's main handle
+ * stays read-only and never holds a write lock (WAL tolerates the brief writer).
+ */
+export function recordLessonStandalone(input: LessonInput): number {
+  const file = dbPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const db = new Database(file);
+  db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');
+  migrate(db);
+  try {
+    return insertLesson(db, input);
+  } finally {
+    db.close();
+  }
 }
 
 /** Close the shared connection (used by tests and on watch shutdown). */

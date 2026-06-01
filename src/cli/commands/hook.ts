@@ -9,8 +9,18 @@
  * - `ingest` (Stop/SessionEnd): refreshes the index so cross-session memory
  *   stays current in real time.
  */
-import { openDbReadonly } from '../../db/index.js';
-import { type ErrorRow, recentErrors } from '../../db/queries.js';
+import type Database from 'better-sqlite3';
+import { openDb, openDbReadonly } from '../../db/index.js';
+import {
+  type ErrorRow,
+  insertLesson,
+  type LessonRow,
+  lessonsForContext,
+  recentErrors,
+  recordLessonHit,
+  repeatedFailures,
+  sessionEfficiency,
+} from '../../db/queries.js';
 import { normalizePath } from '../../parser/claude-code.js';
 import { relativeTime } from '../../utils/time.js';
 import { runIngest } from './ingest.js';
@@ -26,6 +36,7 @@ async function readStdin(): Promise<string> {
 interface PreToolUsePayload {
   tool_name?: string;
   tool_input?: Record<string, unknown>;
+  cwd?: string;
 }
 
 /** Program + flags + first-two-tokens fingerprint of a shell command. */
@@ -55,12 +66,14 @@ export interface HookAdvisory {
 }
 
 /**
- * Build a PreToolUse advisory from past failures of the same tool, or null when
- * there's nothing relevant to warn about. Pure (db + payload in, object out) so
- * it's unit-testable without stdin.
+ * Build a PreToolUse advisory combining (a) distilled lessons that match the
+ * imminent action and (b) raw past failures of the same tool, or null when
+ * there's nothing relevant. Pure (db + payload in, object out) — unit-testable
+ * without stdin. Read-only: does not bump lesson hit counts (PreToolUse is the
+ * hot path; recall accounting happens in the SessionStart hook instead).
  */
 export function buildAdvisory(
-  db: import('better-sqlite3').Database,
+  db: Database.Database,
   payload: PreToolUsePayload,
 ): HookAdvisory | null {
   const tool = payload.tool_name;
@@ -70,29 +83,44 @@ export function buildAdvisory(
   const command = typeof input.command === 'string' ? input.command : null;
   const filePath = typeof input.file_path === 'string' ? normalizePath(input.file_path) : null;
 
-  // Past failures of this exact tool, newest first (uses idx_tc_success + tool).
+  const sections: string[] = [];
+
+  // (a) Distilled lessons that match this tool + command/file.
+  const lessons = lessonsForContext(db, {
+    project: payload.cwd ? normalizePath(payload.cwd) : '',
+    tool,
+    command,
+    file: filePath,
+    limit: 3,
+  });
+  if (lessons.length > 0) {
+    const ls = lessons.map((l: LessonRow) => `- ${l.rule}`).join('\n');
+    sections.push(`📌 Lesson(s) you've recorded for this:\n${ls}`);
+  }
+
+  // (b) Raw past failures of this exact tool, newest first.
   const past = recentErrors(db, { tool, limit: 50 });
   const matches = past.filter((e: ErrorRow) => {
     if (command && e.command) return commandsSimilar(command, e.command);
     if (filePath && e.file_path) return normalizePath(e.file_path) === filePath;
-    // Tools without a command/file key (rare): treat any prior failure as a weak signal.
     return !command && !filePath;
   });
-  if (matches.length === 0) return null;
+  if (matches.length > 0) {
+    const lines = matches.slice(0, 3).map((e) => {
+      const when = e.called_at ? relativeTime(e.called_at) : 'previously';
+      const ctx = e.command ?? e.file_path ?? '';
+      const err = (e.error_text ?? '').replace(/\s+/g, ' ').slice(0, 140);
+      return `- ${when}: \`${ctx.slice(0, 80)}\` → ${err}`;
+    });
+    sections.push(`⚠ ${matches.length} similar ${tool} failure(s) before:\n${lines.join('\n')}`);
+  }
 
-  const lines = matches.slice(0, 3).map((e) => {
-    const when = e.called_at ? relativeTime(e.called_at) : 'previously';
-    const ctx = e.command ?? e.file_path ?? '';
-    const err = (e.error_text ?? '').replace(/\s+/g, ' ').slice(0, 140);
-    return `- ${when}: \`${ctx.slice(0, 80)}\` → ${err}`;
-  });
+  if (sections.length === 0) return null;
 
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
-      additionalContext:
-        `⚠ agentslog memory: you (or a past session) hit ${matches.length} similar ${tool} ` +
-        `failure(s) before:\n${lines.join('\n')}\nConsider adjusting before running this.`,
+      additionalContext: `agentslog memory:\n${sections.join('\n\n')}\nConsider this before running.`,
     },
   };
 }
@@ -115,4 +143,118 @@ export async function runHookCheck(): Promise<void> {
 /** `agentslog hook ingest` — Stop/SessionEnd refresh. Silent (hook context). */
 export async function runHookIngest(): Promise<void> {
   await runIngest({ quiet: true, silent: true });
+}
+
+interface SessionHookPayload {
+  session_id?: string;
+  cwd?: string;
+}
+
+/**
+ * Record deterministic auto-lessons from the failures of a just-finished
+ * session. Pure (db + ids in) so it's unit-testable. Only the unambiguous
+ * "identical command failed ≥3×" case fires — high precision, low noise.
+ * Returns how many lessons were written.
+ */
+export function reflectOnSession(db: Database.Database, sessionId: string): number {
+  const row = db.prepare('SELECT project_path FROM sessions WHERE id = ?').get(sessionId) as
+    | { project_path: string | null }
+    | undefined;
+  const scope = row?.project_path ? normalizePath(row.project_path) : 'global';
+
+  let written = 0;
+  for (const rf of repeatedFailures(db, sessionId)) {
+    if (rf.count < 3) continue;
+    const shape = commandShape(rf.command);
+    const trigger = [shape.program, ...shape.flags].join(' ').slice(0, 60).trim();
+    const err = (rf.error_text ?? '').replace(/\s+/g, ' ').slice(0, 120);
+    insertLesson(db, {
+      rule: `\`${rf.command.slice(0, 80)}\` failed ${rf.count}× in a row: ${err}. Fix or avoid before retrying.`,
+      tool: 'Bash',
+      trigger: trigger || null,
+      scope,
+      source: 'auto',
+      confidence: 0.6,
+      sourceSessionId: sessionId,
+    });
+    written++;
+  }
+  return written;
+}
+
+/**
+ * `agentslog hook reflect` — Stop: refresh the index, then learn from the
+ * session that just finished. Silent (hook context).
+ */
+export async function runHookReflect(): Promise<void> {
+  const raw = await readStdin();
+  let payload: SessionHookPayload;
+  try {
+    payload = JSON.parse(raw) as SessionHookPayload;
+  } catch {
+    payload = {};
+  }
+  // Refresh so the just-finished session is indexed before we reflect on it.
+  await runIngest({ quiet: true, silent: true });
+  if (!payload.session_id) return;
+  const db = openDb();
+  reflectOnSession(db, payload.session_id);
+}
+
+/**
+ * `agentslog hook session-start` — SessionStart: surface the top lessons for
+ * this project (plus global) and, if the most recent session here was flagged
+ * inefficient, nudge the agent to record a lesson. Emits additionalContext.
+ */
+export async function runHookSessionStart(): Promise<void> {
+  const raw = await readStdin();
+  let payload: SessionHookPayload;
+  try {
+    payload = JSON.parse(raw) as SessionHookPayload;
+  } catch {
+    return;
+  }
+  const project = payload.cwd ? normalizePath(payload.cwd) : '';
+  const db = openDb(); // writable: SessionStart bumps recall counters
+
+  // Top 5 lessons for this project + global, ranked by hits then confidence.
+  const lessons = lessonsForContext(db, { project, limit: 5 });
+  recordLessonHit(
+    db,
+    lessons.map((l) => l.id),
+  );
+
+  // Was the most recent session in this project flagged inefficient?
+  let nudge: string | null = null;
+  const last = db
+    .prepare(
+      `SELECT id FROM sessions
+       WHERE parent_session_id IS NULL AND project_path = ?
+       ORDER BY started_at DESC LIMIT 1`,
+    )
+    .get(payload.cwd ?? '') as { id: string } | undefined;
+  if (last) {
+    const eff = sessionEfficiency(db, last.id);
+    if (eff && eff.flags.length > 0) {
+      nudge =
+        `Your last session here was flagged (${eff.flags.join(', ')}). ` +
+        'If you learned something durable, call the agentslog record_lesson tool.';
+    }
+  }
+
+  const parts: string[] = [];
+  if (lessons.length > 0) {
+    parts.push(`Lessons to keep in mind:\n${lessons.map((l) => `- ${l.rule}`).join('\n')}`);
+  }
+  if (nudge) parts.push(nudge);
+  if (parts.length === 0) return;
+
+  process.stdout.write(
+    `${JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'SessionStart',
+        additionalContext: `agentslog memory:\n${parts.join('\n\n')}`,
+      },
+    })}\n`,
+  );
 }
