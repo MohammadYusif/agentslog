@@ -11,8 +11,13 @@ export function appDataDir(): string {
   return data;
 }
 
-/** Absolute path to the SQLite database file. */
+/**
+ * Absolute path to the SQLite database file. Honors AGENTSLOG_DB to relocate
+ * the database (also lets tests point the standalone writer at a temp file).
+ */
 export function dbPath(): string {
+  const override = process.env.AGENTSLOG_DB;
+  if (override && override.trim().length > 0) return override;
   const { data } = envPaths('agentslog', { suffix: '' });
   return path.join(data, 'agentslog.db');
 }

@@ -2,7 +2,7 @@
  * SQLite schema definition and the current schema version.
  */
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -73,4 +73,25 @@ CREATE INDEX IF NOT EXISTS idx_s_source   ON sessions(source);
 -- rows can be filtered and deleted per-session on re-ingest.
 CREATE VIRTUAL TABLE IF NOT EXISTS reasoning_fts
   USING fts5(session_id UNINDEXED, sequence_num UNINDEXED, text);
+
+-- v4: durable lessons the agent learns from inefficient runs. Recalled before
+-- similar actions (PreToolUse) and at session start. Never auto-written to
+-- CLAUDE.md — that path is human-reviewed via "agentslog lesson export".
+CREATE TABLE IF NOT EXISTS lessons (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at        TEXT NOT NULL,
+  source            TEXT NOT NULL DEFAULT 'agent',   -- 'auto' | 'agent' | 'user'
+  scope             TEXT NOT NULL DEFAULT 'global',  -- a project_hash, or 'global'
+  tool              TEXT,                            -- tool the lesson concerns
+  trigger           TEXT,                            -- recall key: command/flag or file
+  rule              TEXT NOT NULL,                   -- the distilled lesson
+  rationale         TEXT,                            -- why / evidence
+  source_session_id TEXT,
+  confidence        REAL NOT NULL DEFAULT 0.8,
+  hits              INTEGER NOT NULL DEFAULT 0,      -- times recalled (usefulness)
+  last_hit_at       TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_dedup ON lessons(scope, rule);
+CREATE INDEX IF NOT EXISTS idx_lessons_scope ON lessons(scope);
+CREATE INDEX IF NOT EXISTS idx_lessons_tool  ON lessons(tool);
 `;
