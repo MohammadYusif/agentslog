@@ -58,7 +58,10 @@ export const MCP_TOOLS: McpTool[] = [
     schema: {
       last: z.string().optional().describe(lastDesc),
       project: z.string().optional().describe('Filter to a project by path or hash substring.'),
-      source: z.string().optional().describe('Filter by source: claude-code, cline, or aider.'),
+      source: z
+        .string()
+        .optional()
+        .describe('Filter by source: claude-code, cline, aider, or odysseus.'),
       limit: z.number().int().positive().max(200).optional().describe('Max rows (default 25).'),
     },
     handler: (db, a) =>

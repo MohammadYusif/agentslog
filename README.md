@@ -9,7 +9,7 @@
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg" alt="Node.js ≥20"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6.svg" alt="TypeScript"></a>
   <a href="https://www.npmjs.com/package/agentslog"><img src="https://img.shields.io/npm/v/agentslog.svg" alt="npm version"></a>
-  <a href="#-development"><img src="https://img.shields.io/badge/tests-112%20passing-brightgreen.svg" alt="112 tests passing"></a>
+  <a href="#-development"><img src="https://img.shields.io/badge/tests-124%20passing-brightgreen.svg" alt="124 tests passing"></a>
 </p>
 
 <p align="center"><strong>Your Claude Code history is a database. Query it like one.</strong></p>
@@ -493,8 +493,8 @@ to add support for another agent.
 
 ## 🧩 Other sources (experimental)
 
-Beyond Claude Code, `agentslog` can ingest other agents' transcripts. Both
-adapters have been hardened against a range of real-world transcripts:
+Beyond Claude Code, `agentslog` can ingest other agents' histories. The Cline and
+Aider adapters have been hardened against a range of real-world transcripts:
 
 * **Cline** — validated against its published message schema and real tasks
   spanning 2024–2026: the modern timeline (`say:"tool"`) *and* older transcripts
@@ -505,10 +505,15 @@ adapters have been hardened against a range of real-world transcripts:
 * **Aider** — fuzzed across many real `.aider.chat.history.md` files (through
   v0.86) including the `diff-fenced` edit format, file reads/edits, and Windows
   paths; edit/read/token extraction matched a raw cross-check on every file.
+* **Odysseus** — a self-hosted AI workspace that stores chats in a SQLite
+  database rather than transcript files. agentslog opens that DB **read-only** and
+  emits one session per non-archived chat, deriving tokens and tool/file activity
+  from the session columns and per-message metadata. Unlike Cline/Aider, this
+  adapter is **not yet validated against real-world databases** — it's best-effort.
 
-They're still marked **experimental** because that sampling can't cover every
-version and model — not because the basics are unproven. Please report any
-format mismatches you hit.
+They're all marked **experimental** because that sampling (or, for Odysseus, the
+lack of it) can't cover every version and model — not because the basics are
+unproven. Please report any format mismatches you hit.
 
 * **Cline** (`saoudrizwan.claude-dev`): auto-detected from VS Code's
   `globalStorage`. Point `AGENTSLOG_CLINE_DIR` at a non-standard location
@@ -520,6 +525,13 @@ format mismatches you hit.
   # one or more repos / history files, delimited like PATH
   AGENTSLOG_AIDER_PATHS="~/code/project-a:~/code/project-b" agentslog ingest
   agentslog sessions --source aider
+  ```
+* **Odysseus**: no central registry—point `agentslog` at its SQLite database
+  directly:
+
+  ```bash
+  AGENTSLOG_ODYSSEUS_DB="~/odysseus/data/app.db" agentslog ingest
+  agentslog sessions --source odysseus
   ```
 
 Pricing for non-Claude models isn't built in; add your own via a `pricing.json`

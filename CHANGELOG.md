@@ -4,6 +4,16 @@ All notable changes to **agentslog** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Experimental Odysseus source adapter.** Ingests sessions from a self-hosted
+  Odysseus AI-workspace SQLite database (located via `AGENTSLOG_ODYSSEUS_DB`),
+  read directly instead of from transcript files: one session per non-archived
+  chat, with tokens and tool/file activity derived from the session columns and
+  per-message metadata. Not yet validated against real-world databases —
+  best-effort. `agentslog sessions --source odysseus`.
+
 ## [0.5.1] — 2026-06-01
 
 ### Fixed

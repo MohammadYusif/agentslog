@@ -50,5 +50,6 @@ touching the core.
 
 Open an issue with the agent/tool, its version, and (if a parser mismatch) a
 small redacted snippet of the transcript shape that wasn't handled correctly.
-The experimental Cline/Aider adapters especially benefit from real-world
-format reports.
+The experimental Cline/Aider/Odysseus adapters especially benefit from real-world
+format reports — the Odysseus adapter in particular is not yet validated against
+real databases.
