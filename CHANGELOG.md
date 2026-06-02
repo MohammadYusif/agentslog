@@ -4,7 +4,7 @@ All notable changes to **agentslog** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] — 2026-06-02
 
 ### Added
 - **Experimental Odysseus source adapter.** Ingests sessions from a self-hosted
@@ -124,6 +124,7 @@ Initial release.
   database with a busy timeout, idempotent per-session writes, and storage in the
   OS app-data directory via `env-paths`.
 
+[0.6.0]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.6.0
 [0.5.1]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.5.1
 [0.5.0]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.5.0
 [0.4.1]: https://github.com/MohammadYusif/agentslog/releases/tag/v0.4.1

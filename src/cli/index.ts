@@ -38,7 +38,7 @@ const program = new Command();
 program
   .name('agentslog')
   .description('Query your Claude Code session history as a local SQLite database')
-  .version('0.5.1');
+  .version('0.6.0');
 
 program
   .command('setup')
