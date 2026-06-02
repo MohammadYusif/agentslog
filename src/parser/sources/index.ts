@@ -7,6 +7,7 @@
 import { aiderAdapter } from './aider.js';
 import { claudeCodeAdapter } from './claude-code.js';
 import { clineAdapter } from './cline.js';
+import { odysseusAdapter } from './odysseus.js';
 import type { SourceAdapter } from './types.js';
 
 export { aiderAdapter, parseAiderHistory } from './aider.js';
@@ -17,10 +18,16 @@ export {
   defineAdapter,
   validateParsedSession,
 } from './contract.js';
+export { odysseusAdapter, parseOdysseusDb } from './odysseus.js';
 export type { DiscoveredUnit, SourceAdapter } from './types.js';
 
 /** All registered adapters, primary source first. */
-export const ALL_ADAPTERS: SourceAdapter[] = [claudeCodeAdapter, clineAdapter, aiderAdapter];
+export const ALL_ADAPTERS: SourceAdapter[] = [
+  claudeCodeAdapter,
+  clineAdapter,
+  aiderAdapter,
+  odysseusAdapter,
+];
 
 /** Adapters whose data is actually present/configured on this machine. */
 export function availableAdapters(): SourceAdapter[] {

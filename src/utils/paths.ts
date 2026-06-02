@@ -85,3 +85,14 @@ export function aiderSearchPaths(): string[] {
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
 }
+
+/**
+ * Absolute path to the Odysseus SQLite database, supplied via
+ * AGENTSLOG_ODYSSEUS_DB. Odysseus has no central registry — the user points us
+ * at its `data/app.db` file directly. Returns null when unset, in which case
+ * Odysseus is not ingested.
+ */
+export function odysseusDbPath(): string | null {
+  const v = process.env.AGENTSLOG_ODYSSEUS_DB;
+  return v && v.trim().length > 0 ? v.trim() : null;
+}
