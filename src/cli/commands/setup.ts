@@ -28,51 +28,42 @@ export const BLOCK_END = '<!-- agentslog:end -->';
 /** Canonical CLAUDE.md instruction block (between the managed markers). */
 export const MEMORY_BLOCK = `## agentslog — your own coding history
 
-You have the \`agentslog\` MCP server: a searchable index of your past coding-agent
-sessions (every tool call, file edit, error, and recorded lesson) across all
-projects on this machine. Use it to avoid repeating past mistakes.
+You have the \`agentslog\` MCP server: a searchable index of every past session on
+this machine — every tool call, file edit, error, and lesson you've recorded.
 
-- **Before running a tricky, slow, or destructive shell command**, call
-  \`recent_errors\` (filter by tool/command) to check whether you — or a past
-  session — already failed at it, and why.
-- **Before editing a file you've struggled with**, call \`find_sessions_by_file\`
-  to see what previously changed there and what broke.
-- **Check \`list_lessons\`** when unsure how to do something in this project — it
-  holds durable gotchas you've learned.
-- **When you discover a non-obvious gotcha or a clearly better approach**, call
-  \`record_lesson\` (with a short exact \`trigger\`, e.g. \`ls -Recurse\`) so future
-  sessions avoid the mistake.
-- Use \`search_reasoning\`, \`get_session\`, \`review_session\`, and \`get_stats\` when
-  you need the deeper "why", a full past run, an efficiency check, or spend.
+At session start, lessons recorded for this project (and global ones) are injected
+automatically. Read them before touching any shell or file.
 
-Prefer a quick agentslog lookup over re-deriving something you've already done.
+### The one mandatory habit: record_lesson
 
-### When something breaks, diagnose with agentslog first
+Whenever you discover a non-obvious gotcha or a clearly better approach, call
+\`record_lesson\` immediately. This is not optional — lessons are the only thing
+that survives context resets and surfaces to future sessions automatically.
 
-Treat agentslog as the first diagnostic step for *any* error, regression, or
-"this used to work" situation — before you start guessing or re-reading code
-from scratch. Your own history almost certainly contains the answer.
+What a good lesson looks like:
 
-1. **Reproduce the failure?** Call \`recent_errors\` (filter by the failing
-   \`tool\` and/or \`project\`) to see if this exact failure has happened before and
-   how it was resolved. A past session likely already paid this cost.
-2. **A file misbehaving?** Call \`find_sessions_by_file\` on it to see every prior
-   run that touched it — the change that introduced the bug is usually in there.
-   Open the suspect run with \`get_session\` for the full tool-call trace.
-3. **"It worked yesterday"?** Find the last good session (\`list_sessions\` /
-   \`find_sessions_by_tool\`) and \`get_session\` both runs to compare what diverged
-   — different tools, files, or more errors.
-4. **Unsure *why* a past approach was chosen** before you undo it? Use
-   \`search_reasoning\` to recall the original intent so you don't reintroduce a
-   bug a past session deliberately fixed.
-5. **After resolving it**, call \`record_lesson\` with a short exact \`trigger\` so
-   the next occurrence is caught instantly. If the run was messy, \`review_session\`
-   it to capture what made it inefficient.
+  record_lesson({
+    rule: "On this machine use \`python\`, not \`python3\` — python3 hits the MS Store stub",
+    trigger: "python3",   // short exact-match string, not a sentence
+    tool: "Bash",
+    scope: "global"       // "project" if repo-specific, "global" for machine-wide
+  })
 
-Use the full toolset, not just one tool — chain them (\`recent_errors\` →
-\`get_session\` → \`search_reasoning\`) the way you'd chain a debugger. The history
-is already on disk and free to query; reaching for it should be reflexive, not a
-last resort.`;
+The \`trigger\` must be a short exact string (e.g. \`python3\`, \`git commit\`, \`Edit\`).
+It controls when the lesson resurfaces automatically before that command or tool runs.
+
+### When to use the other tools
+
+**Before a command that has failed before** — call \`recent_errors(tool="Bash")\` first.
+
+**When something breaks** — reach for agentslog before re-reading code from scratch:
+1. \`recent_errors\` — has this exact failure happened before, and how was it resolved?
+2. \`find_sessions_by_file\` — what past sessions touched this file and what broke?
+3. \`get_session\` on the suspect run for the full tool-call trace.
+
+**When unsure how to approach something** — \`list_lessons\` before guessing.
+
+The history is on disk and free to query. Reaching for it should be reflexive.`;
 
 /**
  * Insert or replace the managed agentslog block in an existing CLAUDE.md body.
@@ -320,7 +311,12 @@ async function resolveComponents(o: SetupOptions): Promise<{
     memory: memoryFlag
       ? false
       : await confirm('Add the agentslog instruction to ~/.claude/CLAUDE.md?', true),
-    hooks: hooksFlag ? true : await confirm('Install hooks (slight per-command latency)?', false),
+    hooks: hooksFlag
+      ? true
+      : await confirm(
+          'Install hooks? (SessionStart surfaces lessons; PreToolUse warns before repeated failures)',
+          true,
+        ),
     reasoning: reasoningFlag
       ? true
       : await confirm('Index reasoning (thinking) for search?', false),
@@ -421,22 +417,24 @@ export async function runSetup(o: SetupOptions = {}): Promise<void> {
             `${file} is not valid JSON — fix it by hand, then re-run (left unchanged)`,
           );
         }
+        // If disableAllHooks is set, remove it — hooks are useless otherwise.
+        if (parsed.disableAllHooks === true) {
+          delete (parsed as Settings).disableAllHooks;
+          results.push({
+            label: 'Removed "disableAllHooks": true',
+            status: 'applied',
+            detail: 'this flag silently blocks all hooks — removed so the hooks below can fire',
+          });
+        }
         const { settings, added } = mergeHooks(parsed);
         if (added.length === 0) {
           results.push({ label: 'Hooks → ~/.claude/settings.json', status: 'already' });
         } else {
           fs.writeFileSync(file, `${JSON.stringify(settings, null, 2)}\n`, 'utf-8');
-          const warn =
-            settings.disableAllHooks === true
-              ? '  ' +
-                chalk.yellow(
-                  'note: "disableAllHooks": true is set — hooks won\'t fire until you remove it',
-                )
-              : '';
           results.push({
             label: 'Hooks → ~/.claude/settings.json',
             status: 'applied',
-            detail: `added ${added.length} hook(s)${warn ? `\n${warn}` : ''}`,
+            detail: `added ${added.length} hook(s)`,
           });
         }
       } catch (err) {

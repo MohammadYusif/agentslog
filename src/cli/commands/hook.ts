@@ -164,12 +164,12 @@ export function reflectOnSession(db: Database.Database, sessionId: string): numb
 
   let written = 0;
   for (const rf of repeatedFailures(db, sessionId)) {
-    if (rf.count < 3) continue;
+    if (rf.count < 2) continue;
     const shape = commandShape(rf.command);
     const trigger = [shape.program, ...shape.flags].join(' ').slice(0, 60).trim();
     const err = (rf.error_text ?? '').replace(/\s+/g, ' ').slice(0, 120);
     insertLesson(db, {
-      rule: `\`${rf.command.slice(0, 80)}\` failed ${rf.count}× in a row: ${err}. Fix or avoid before retrying.`,
+      rule: `\`${rf.command.slice(0, 80)}\` failed ${rf.count}× in a row: ${err}`,
       tool: 'Bash',
       trigger: trigger || null,
       scope,

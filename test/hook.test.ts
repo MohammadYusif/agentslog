@@ -163,18 +163,20 @@ describe('reflectOnSession — auto-lessons', () => {
     writeSession(db, {
       ...sessionWithFailure('x', null),
       id: 'few',
-      toolCallCount: 2,
-      errorCount: 2,
-      toolCalls: [0, 1].map((i) => ({
-        id: String(i),
-        sequenceNum: i,
-        toolName: 'Bash' as const,
-        calledAt: null,
-        success: false,
-        filePath: null,
-        command: 'flaky',
-        errorText: 'e',
-      })),
+      toolCallCount: 1,
+      errorCount: 1,
+      toolCalls: [
+        {
+          id: '0',
+          sequenceNum: 0,
+          toolName: 'Bash' as const,
+          calledAt: null,
+          success: false,
+          filePath: null,
+          command: 'flaky',
+          errorText: 'e',
+        },
+      ],
     });
     expect(reflectOnSession(db, 'few')).toBe(0);
     db.close();
