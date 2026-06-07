@@ -4,6 +4,26 @@ All notable changes to **agentslog** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] — 2026-06-07
+
+### Fixed
+
+- **`list_lessons` hit tracking is now best-effort.** A transient DB lock
+  during hit recording could propagate and fail the entire MCP read. The
+  write is now wrapped in a try/catch so the lesson list is always returned.
+
+- **No more double-warning for files with prior "file not read" failures.**
+  `buildAdvisory` previously emitted two advisory sections for the same root
+  cause when a file had both a per-file match and the tool-level pattern match.
+  The pattern scan is now skipped when the per-file match already covered it.
+
+- **`FILE_NOT_READ_PATTERN` constant centralises the matched substring.**
+  The string was hardcoded in three places; a single constant now governs it.
+
+- **Tests for the new Edit/Write branches.** Four tests were added covering
+  the pattern advisory on new files, the no-double-warn guard, auto-lesson
+  recording, and cross-session deduplication in `reflectOnSession`.
+
 ## [0.7.0] — 2026-06-07
 
 ### Fixed
