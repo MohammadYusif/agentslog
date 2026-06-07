@@ -25,6 +25,9 @@ import { normalizePath } from '../../parser/claude-code.js';
 import { relativeTime } from '../../utils/time.js';
 import { runIngest } from './ingest.js';
 
+/** Substring present in Claude Code's "file not pre-read" error messages. */
+const FILE_NOT_READ_PATTERN = 'has not been read';
+
 /** Read all of stdin (hooks pipe JSON in). Empty string if attached to a TTY. */
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return '';
@@ -118,15 +121,22 @@ export function buildAdvisory(
   // For Edit/Write: scan all past errors of this tool for the "file not read"
   // pattern — it's tool-level, not file-specific, so the per-file match above
   // misses it for files that haven't failed before.
+  // Skip if the per-file match already surfaced this exact pattern to avoid
+  // emitting two warnings for the same root cause.
   if (tool === 'Edit' || tool === 'Write') {
-    const unreadCount = past.filter((e: ErrorRow) =>
-      (e.error_text ?? '').includes('has not been read'),
-    ).length;
-    if (unreadCount > 0) {
-      sections.push(
-        `🔒 Read ${filePath ? `\`${filePath}\`` : 'the file'} before calling ${tool} — ` +
-          `past sessions hit "File has not been read yet" ${unreadCount}× with this tool.`,
-      );
+    const alreadyCoveredByFileMatch = matches.some((m: ErrorRow) =>
+      (m.error_text ?? '').includes(FILE_NOT_READ_PATTERN),
+    );
+    if (!alreadyCoveredByFileMatch) {
+      const unreadCount = past.filter((e: ErrorRow) =>
+        (e.error_text ?? '').includes(FILE_NOT_READ_PATTERN),
+      ).length;
+      if (unreadCount > 0) {
+        sections.push(
+          `🔒 Read ${filePath ? `\`${filePath}\`` : 'the file'} before calling ${tool} — ` +
+            `past sessions hit "File has not been read yet" ${unreadCount}× with this tool.`,
+        );
+      }
     }
   }
 
@@ -206,7 +216,7 @@ export function reflectOnSession(db: Database.Database, sessionId: string): numb
        FROM tool_calls
        WHERE session_id = ? AND success = 0
          AND tool_name IN ('Edit', 'Write')
-         AND error_text LIKE '%has not been read%'
+         AND error_text LIKE '%${FILE_NOT_READ_PATTERN}%'
        GROUP BY tool_name
        HAVING COUNT(*) >= 2`,
     )

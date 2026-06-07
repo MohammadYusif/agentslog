@@ -49,6 +49,44 @@ function sessionWithFailure(command: string | null, filePath: string | null): Pa
   };
 }
 
+/** Session with N Edit failures using the real "file not read" error text. */
+function sessionWithEditUnreadErrors(id: string, filePath: string, count: number): ParsedSession {
+  return {
+    id,
+    parentSessionId: null,
+    source: 'claude-code',
+    projectHash: 'h',
+    projectPath: '/repo',
+    aiTitle: 'A run',
+    model: null,
+    ccVersion: null,
+    gitBranch: null,
+    startedAt: '2026-01-05T00:00:00Z',
+    endedAt: '2026-01-05T00:10:00Z',
+    durationMs: 600000,
+    inputTokens: 0,
+    outputTokens: 0,
+    lastInputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    toolCallCount: count,
+    errorCount: count,
+    userTurnCount: 1,
+    rawPath: '/x.jsonl',
+    toolCalls: Array.from({ length: count }, (_, i) => ({
+      id: `${id}-tc-${i}`,
+      sequenceNum: i,
+      toolName: 'Edit' as const,
+      calledAt: '2026-01-05T00:01:00Z',
+      success: false,
+      filePath,
+      command: null,
+      errorText: 'File has not been read yet. Read it first before writing to it.',
+    })),
+    filesTouched: [],
+  };
+}
+
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentslog-hook-'));
   dbFile = path.join(dir, 'db.sqlite');
@@ -97,6 +135,37 @@ describe('hook check — buildAdvisory', () => {
     const db = openDb(dbFile);
     writeSession(db, sessionWithFailure('ls -Recurse', null));
     expect(buildAdvisory(db, { tool_name: 'WebSearch', tool_input: {} })).toBeNull();
+    db.close();
+  });
+
+  it('warns Edit on a NEW file when past sessions had "file not read" errors on other files', () => {
+    const db = openDb(dbFile);
+    // Past failure on a different file.
+    writeSession(db, sessionWithEditUnreadErrors('old-sess', 'src/auth.ts', 1));
+    // Now editing a completely new file — should still warn via pattern.
+    const adv = buildAdvisory(db, {
+      tool_name: 'Edit',
+      tool_input: { file_path: 'src/new-file.ts' },
+    });
+    expect(adv).not.toBeNull();
+    expect(adv?.hookSpecificOutput.additionalContext).toContain('has not been read');
+    expect(adv?.hookSpecificOutput.additionalContext).toContain('new-file.ts');
+    db.close();
+  });
+
+  it('does NOT double-warn when the per-file match already covers the "not read" pattern', () => {
+    const db = openDb(dbFile);
+    // Failure on the SAME file we are about to edit.
+    writeSession(db, sessionWithEditUnreadErrors('old-sess', 'src/auth.ts', 1));
+    const adv = buildAdvisory(db, {
+      tool_name: 'Edit',
+      tool_input: { file_path: 'src/auth.ts' },
+    });
+    expect(adv).not.toBeNull();
+    const ctx = adv?.hookSpecificOutput.additionalContext ?? '';
+    // Should mention the pattern once, not twice.
+    const countMatches = (ctx.match(/has not been read/g) ?? []).length;
+    expect(countMatches).toBe(1);
     db.close();
   });
 
@@ -154,6 +223,30 @@ describe('reflectOnSession — auto-lessons', () => {
 
     // Re-reflecting does not duplicate.
     reflectOnSession(db, 'sess-1');
+    expect(listLessons(db, {})).toHaveLength(1);
+    db.close();
+  });
+
+  it('records a global lesson for Edit "file not read" failures >=2x', () => {
+    const db = openDb(dbFile);
+    writeSession(db, sessionWithEditUnreadErrors('sess-edit', 'src/foo.ts', 3));
+    const n = reflectOnSession(db, 'sess-edit');
+    expect(n).toBe(1);
+    const lessons = listLessons(db, {});
+    expect(lessons).toHaveLength(1);
+    expect(lessons[0].source).toBe('auto');
+    expect(lessons[0].tool).toBe('Edit');
+    expect(lessons[0].scope).toBe('global');
+    expect(lessons[0].rule).toContain('has not been read');
+    db.close();
+  });
+
+  it('does not duplicate Edit "file not read" lesson across sessions', () => {
+    const db = openDb(dbFile);
+    writeSession(db, sessionWithEditUnreadErrors('sess-a', 'src/foo.ts', 2));
+    writeSession(db, sessionWithEditUnreadErrors('sess-b', 'src/bar.ts', 2));
+    reflectOnSession(db, 'sess-a');
+    reflectOnSession(db, 'sess-b'); // second session should not create a duplicate
     expect(listLessons(db, {})).toHaveLength(1);
     db.close();
   });

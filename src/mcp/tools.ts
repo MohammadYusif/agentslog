@@ -206,7 +206,10 @@ export const MCP_TOOLS: McpTool[] = [
         project: currentProject(),
         limit: (a.limit as number) ?? 25,
       });
-      recordLessonHitStandalone(lessons.map((l) => l.id));
+      // Best-effort: don't let a transient DB lock fail the read.
+      try {
+        recordLessonHitStandalone(lessons.map((l) => l.id));
+      } catch {}
       return lessons;
     },
   },
