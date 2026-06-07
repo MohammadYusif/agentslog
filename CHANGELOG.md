@@ -4,6 +4,34 @@ All notable changes to **agentslog** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-06-07
+
+### Fixed
+
+- **Lesson hits counter now increments via MCP.** The `list_lessons` MCP tool
+  previously fetched lessons over a read-only connection and never bumped hit
+  counts. Hits now track actual in-session lookups, not just the `SessionStart`
+  hook, making the counter meaningful.
+
+- **`hook check` (PreToolUse) now catches the Edit/Write "file not read" pattern
+  for any file.** The advisory previously matched Edit/Write errors only by exact
+  file path, so it stayed silent for files that hadn't failed before — even when
+  dozens of prior sessions hit the same "File has not been read yet" error. The
+  hook now does a second pass over all past errors for the tool and emits a
+  dedicated warning whenever this pattern is present in history.
+
+- **Auto-reflection now records Edit/Write "file not read" lessons.** The
+  `hook reflect` (Stop hook) previously only auto-recorded lessons for repeated
+  Bash command failures. Edit and Write failures — the most common recurring error
+  class — were invisible to the learning loop. They are now captured when the same
+  pattern fires ≥ 2× in a session, deduplicated so only one global lesson is ever
+  written per tool.
+
+- **Session-start nudge query now uses the normalized project path.** The
+  "previous session was inefficient" nudge queried `project_path` with the raw
+  `cwd` from the hook payload, which could silently mismatch the normalized path
+  stored in the database. It now uses the already-normalized `project` variable.
+
 ## [0.6.0] — 2026-06-02
 
 ### Added

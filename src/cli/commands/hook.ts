@@ -115,6 +115,21 @@ export function buildAdvisory(
     sections.push(`⚠ ${matches.length} similar ${tool} failure(s) before:\n${lines.join('\n')}`);
   }
 
+  // For Edit/Write: scan all past errors of this tool for the "file not read"
+  // pattern — it's tool-level, not file-specific, so the per-file match above
+  // misses it for files that haven't failed before.
+  if (tool === 'Edit' || tool === 'Write') {
+    const unreadCount = past.filter((e: ErrorRow) =>
+      (e.error_text ?? '').includes('has not been read'),
+    ).length;
+    if (unreadCount > 0) {
+      sections.push(
+        `🔒 Read ${filePath ? `\`${filePath}\`` : 'the file'} before calling ${tool} — ` +
+          `past sessions hit "File has not been read yet" ${unreadCount}× with this tool.`,
+      );
+    }
+  }
+
   if (sections.length === 0) return null;
 
   return {
@@ -163,6 +178,8 @@ export function reflectOnSession(db: Database.Database, sessionId: string): numb
   const scope = row?.project_path ? normalizePath(row.project_path) : 'global';
 
   let written = 0;
+
+  // Bash: identical command failed multiple times.
   for (const rf of repeatedFailures(db, sessionId)) {
     if (rf.count < 2) continue;
     const shape = commandShape(rf.command);
@@ -179,6 +196,44 @@ export function reflectOnSession(db: Database.Database, sessionId: string): numb
     });
     written++;
   }
+
+  // Edit / Write: "File has not been read yet" — tool-level hard constraint.
+  // Only record if no existing auto-lesson already covers this tool to avoid
+  // growing duplicates across sessions.
+  const unreadByTool = db
+    .prepare(
+      `SELECT tool_name, COUNT(*) AS count
+       FROM tool_calls
+       WHERE session_id = ? AND success = 0
+         AND tool_name IN ('Edit', 'Write')
+         AND error_text LIKE '%has not been read%'
+       GROUP BY tool_name
+       HAVING COUNT(*) >= 2`,
+    )
+    .all(sessionId) as { tool_name: string; count: number }[];
+
+  for (const rf of unreadByTool) {
+    const alreadyExists = db
+      .prepare(
+        `SELECT 1 FROM lessons
+         WHERE tool = ? AND source = 'auto' AND trigger = ?
+         LIMIT 1`,
+      )
+      .get(rf.tool_name, rf.tool_name);
+    if (alreadyExists) continue;
+
+    insertLesson(db, {
+      rule: `Always Read a file before calling ${rf.tool_name} — "File has not been read yet" occurred ${rf.count}× in this session. This is a hard constraint, not a style note.`,
+      tool: rf.tool_name,
+      trigger: rf.tool_name,
+      scope: 'global', // applies everywhere, not just this project
+      source: 'auto',
+      confidence: 0.75,
+      sourceSessionId: sessionId,
+    });
+    written++;
+  }
+
   return written;
 }
 
@@ -232,7 +287,7 @@ export async function runHookSessionStart(): Promise<void> {
        WHERE parent_session_id IS NULL AND project_path = ?
        ORDER BY started_at DESC LIMIT 1`,
     )
-    .get(payload.cwd ?? '') as { id: string } | undefined;
+    .get(project) as { id: string } | undefined;
   if (last) {
     const eff = sessionEfficiency(db, last.id);
     if (eff && eff.flags.length > 0) {

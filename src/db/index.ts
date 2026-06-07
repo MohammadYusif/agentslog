@@ -7,7 +7,7 @@ import Database from 'better-sqlite3';
 import type { ParsedSession } from '../parser/types.js';
 import { dbPath } from '../utils/paths.js';
 import { migrate } from './migrate.js';
-import { insertLesson, type LessonInput } from './queries.js';
+import { insertLesson, type LessonInput, recordLessonHit } from './queries.js';
 
 let singleton: Database.Database | null = null;
 
@@ -69,6 +69,26 @@ export function recordLessonStandalone(input: LessonInput): number {
   migrate(db);
   try {
     return insertLesson(db, input);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Bump recall counters for the given lesson ids over a **short-lived** writable
+ * connection, then close immediately. Used by the MCP `list_lessons` tool so
+ * the server's main read-only handle never holds a write lock.
+ */
+export function recordLessonHitStandalone(ids: number[]): void {
+  if (ids.length === 0) return;
+  const file = dbPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const db = new Database(file);
+  db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');
+  migrate(db);
+  try {
+    recordLessonHit(db, ids);
   } finally {
     db.close();
   }

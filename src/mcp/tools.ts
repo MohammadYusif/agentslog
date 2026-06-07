@@ -8,7 +8,7 @@
  */
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
-import { recordLessonStandalone } from '../db/index.js';
+import { recordLessonHitStandalone, recordLessonStandalone } from '../db/index.js';
 import {
   childSessions,
   filesForSession,
@@ -201,8 +201,14 @@ export const MCP_TOOLS: McpTool[] = [
     schema: {
       limit: z.number().int().positive().max(100).optional().describe('Max lessons (default 25).'),
     },
-    handler: (db, a) =>
-      lessonsForContext(db, { project: currentProject(), limit: (a.limit as number) ?? 25 }),
+    handler: (db, a) => {
+      const lessons = lessonsForContext(db, {
+        project: currentProject(),
+        limit: (a.limit as number) ?? 25,
+      });
+      recordLessonHitStandalone(lessons.map((l) => l.id));
+      return lessons;
+    },
   },
   {
     name: 'review_session',
