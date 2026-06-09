@@ -17,7 +17,6 @@ import {
   type LessonRow,
   lessonsForContext,
   recentErrors,
-  recordLessonHit,
   repeatedFailures,
   sessionEfficiency,
 } from '../../db/queries.js';
@@ -100,7 +99,11 @@ export function buildAdvisory(
     const ls = lessons.map((l: LessonRow) => `- ${l.rule}`).join('\n');
     sections.push(`📌 Lesson(s) you've recorded for this:\n${ls}`);
     // Bump hits only for lessons that actually fired — not all lessons at session start.
-    try { recordLessonHitStandalone(lessons.map((l: LessonRow) => l.id)); } catch { /* non-fatal */ }
+    try {
+      recordLessonHitStandalone(lessons.map((l: LessonRow) => l.id));
+    } catch {
+      /* non-fatal */
+    }
   }
 
   // (b) Raw past failures of this exact tool, newest first.
