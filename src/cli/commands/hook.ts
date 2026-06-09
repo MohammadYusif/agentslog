@@ -10,7 +10,7 @@
  *   stays current in real time.
  */
 import type Database from 'better-sqlite3';
-import { openDb, openDbReadonly } from '../../db/index.js';
+import { openDb, openDbReadonly, recordLessonHitStandalone } from '../../db/index.js';
 import {
   type ErrorRow,
   insertLesson,
@@ -99,6 +99,8 @@ export function buildAdvisory(
   if (lessons.length > 0) {
     const ls = lessons.map((l: LessonRow) => `- ${l.rule}`).join('\n');
     sections.push(`📌 Lesson(s) you've recorded for this:\n${ls}`);
+    // Bump hits only for lessons that actually fired — not all lessons at session start.
+    try { recordLessonHitStandalone(lessons.map((l: LessonRow) => l.id)); } catch { /* non-fatal */ }
   }
 
   // (b) Raw past failures of this exact tool, newest first.
@@ -283,11 +285,9 @@ export async function runHookSessionStart(): Promise<void> {
   const db = openDb(); // writable: SessionStart bumps recall counters
 
   // Top 5 lessons for this project + global, ranked by hits then confidence.
+  // Hits are NOT bumped here — they're bumped in buildAdvisory() when a lesson
+  // actually fires for a specific tool call, giving meaningful per-lesson signal.
   const lessons = lessonsForContext(db, { project, limit: 5 });
-  recordLessonHit(
-    db,
-    lessons.map((l) => l.id),
-  );
 
   // Was the most recent session in this project flagged inefficient?
   let nudge: string | null = null;

@@ -9,7 +9,7 @@
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg" alt="Node.js ≥20"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6.svg" alt="TypeScript"></a>
   <a href="https://www.npmjs.com/package/agentslog"><img src="https://img.shields.io/npm/v/agentslog.svg" alt="npm version"></a>
-  <a href="#-development"><img src="https://img.shields.io/badge/tests-124%20passing-brightgreen.svg" alt="124 tests passing"></a>
+  <a href="#-development"><img src="https://img.shields.io/badge/tests-128%20passing-brightgreen.svg" alt="128 tests passing"></a>
 </p>
 
 <p align="center"><strong>Your Claude Code history is a database. Query it like one.</strong></p>
@@ -292,8 +292,9 @@ The same history is even more useful to the *agent* than to you. Coding agents
 are stateless — they forget everything between sessions. agentslog can feed that
 memory back so an agent stops repeating its own mistakes.
 
-**Stop repeating failures (a `PreToolUse` hook).** Before a command runs,
-agentslog checks whether the same kind of command failed before and warns:
+**Stop repeating failures (a `PreToolUse` hook).** Before every tool call,
+agentslog checks whether the same kind of command failed before — and whether any
+recorded lesson applies — and warns in real time:
 
 ```
 $ echo '{"tool_name":"Bash","tool_input":{"command":"ls -Recurse src"}}' | agentslog hook check
@@ -301,6 +302,14 @@ $ echo '{"tool_name":"Bash","tool_input":{"command":"ls -Recurse src"}}' | agent
 - 15h ago: `ls "C:/…/src" -Recurse -Name` → Exit code 2: ls: unknown option -- e
 Consider adjusting before running this.
 ```
+
+Lesson hits are recorded only when a lesson actually fires here — not in bulk at
+session start — so `agentslog lessons` hit counts reflect real recall, not noise.
+
+**Learn automatically after each session (a `Stop` hook).** After every session
+agentslog re-indexes the transcript and runs `reflectOnSession` — if the same
+command failed ≥ 2 times, a lesson is recorded automatically so the next session
+is warned before it tries again.
 
 **Query history mid-task (MCP server).** Register agentslog as an MCP server and
 the agent gets read tools — `recent_errors`, `find_sessions_by_file`,

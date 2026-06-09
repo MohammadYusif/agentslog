@@ -102,6 +102,7 @@ export async function parseSessionFile(
 
   let sessionId: string | null = null;
   let aiTitle: string | null = null;
+  let firstUserText: string | null = null;
   let model: string | null = null;
   let ccVersion: string | null = null;
   let gitBranch: string | null = null;
@@ -194,6 +195,7 @@ export async function parseSessionFile(
       const content = event.message?.content;
       if (typeof content === 'string') {
         // A real user text turn.
+        if (!firstUserText) firstUserText = content.slice(0, 120).replace(/\n/g, ' ');
         userTurnCount++;
       } else if (Array.isArray(content)) {
         // May be tool_result blocks, or user content blocks.
@@ -203,14 +205,20 @@ export async function parseSessionFile(
             hasToolResult = true;
             const id = block.tool_use_id;
             const isError = block.is_error === true;
-            if (isError) errorCount++;
-            if (id && toolCallIndexById.has(id)) {
-              const idx = toolCallIndexById.get(id)!;
-              const tc = toolCalls[idx];
-              tc.success = !isError;
-              if (isError) {
-                tc.errorText = stringifyResultContent(block.content).slice(0, MAX_ERROR_LEN);
+            if (isError) {
+              const errorText = stringifyResultContent(block.content);
+              // User-rejected tool calls ("doesn't want to proceed") are not real
+              // tool failures — they inflate error counts without indicating bugs.
+              const isRejection = errorText.includes("doesn't want to proceed");
+              if (!isRejection) errorCount++;
+              if (id && toolCallIndexById.has(id)) {
+                const idx = toolCallIndexById.get(id)!;
+                const tc = toolCalls[idx];
+                tc.success = false;
+                tc.errorText = errorText.slice(0, MAX_ERROR_LEN);
               }
+            } else if (id && toolCallIndexById.has(id)) {
+              toolCalls[toolCallIndexById.get(id)!].success = true;
             }
           }
         }
@@ -327,7 +335,7 @@ export async function parseSessionFile(
     source: 'claude-code',
     projectHash,
     projectPath,
-    aiTitle,
+    aiTitle: aiTitle ?? firstUserText,
     model,
     ccVersion,
     gitBranch,

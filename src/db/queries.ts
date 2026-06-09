@@ -372,7 +372,10 @@ export interface ErrorFilters {
  * so a failure is always actionable.
  */
 export function recentErrors(db: Database.Database, filters: ErrorFilters = {}): ErrorRow[] {
-  const clauses: string[] = ['t.success = 0'];
+  const clauses: string[] = [
+    't.success = 0',
+    "(t.error_text IS NULL OR t.error_text NOT LIKE '%doesn''t want to proceed%')",
+  ];
   const params: Record<string, unknown> = {};
 
   if (filters.sinceIso) {
