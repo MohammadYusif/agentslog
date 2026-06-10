@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+import { REJECTION_PATTERN } from './constants.js';
 import type {
   ContentBlock,
   ParsedFileTouched,
@@ -58,7 +59,7 @@ function stringifyResultContent(content: unknown): string {
 }
 
 /** Extract the file path for a tool_use block, or null for command/other tools. */
-function extractFilePath(
+export function extractFilePath(
   toolName: string,
   input: Record<string, unknown> | undefined,
 ): string | null {
@@ -209,7 +210,7 @@ export async function parseSessionFile(
               const errorText = stringifyResultContent(block.content);
               // User-rejected tool calls ("doesn't want to proceed") are not real
               // tool failures — they inflate error counts without indicating bugs.
-              const isRejection = errorText.includes("doesn't want to proceed");
+              const isRejection = errorText.includes(REJECTION_PATTERN);
               if (!isRejection) errorCount++;
               if (id && toolCallIndexById.has(id)) {
                 const idx = toolCallIndexById.get(id)!;

@@ -189,6 +189,104 @@ describe('hook check — buildAdvisory', () => {
   });
 });
 
+/** Session with N identical failed Bash commands. */
+function sessionWithBashFailures(id: string, command: string, count: number): ParsedSession {
+  return {
+    ...sessionWithFailure(command, null),
+    id,
+    toolCallCount: count,
+    errorCount: count,
+    toolCalls: Array.from({ length: count }, (_, i) => ({
+      id: `${id}-tc-${i}`,
+      sequenceNum: i,
+      toolName: 'Bash' as const,
+      calledAt: '2026-01-05T00:01:00Z',
+      success: false,
+      filePath: null,
+      command,
+      errorText: 'unknown option -- e',
+    })),
+  };
+}
+
+describe('hook check — advisory precision', () => {
+  it('matches Glob failures by their path input (same extraction as ingest)', () => {
+    const db = openDb(dbFile);
+    const failed = sessionWithFailure(null, 'C:/repo/src');
+    failed.toolCalls[0].toolName = 'Glob';
+    failed.toolCalls[0].errorText = 'Ripgrep search timed out';
+    writeSession(db, failed);
+
+    const adv = buildAdvisory(db, {
+      tool_name: 'Glob',
+      tool_input: { pattern: '**/*.ts', path: 'C:/repo/src' },
+    });
+    expect(adv?.hookSpecificOutput.additionalContext).toContain('similar Glob failure');
+    db.close();
+  });
+
+  it('does NOT replay unrelated failures for a Glob against a different path', () => {
+    const db = openDb(dbFile);
+    const failed = sessionWithFailure(null, 'C:/elsewhere/big-repo');
+    failed.toolCalls[0].toolName = 'Glob';
+    writeSession(db, failed);
+
+    const adv = buildAdvisory(db, {
+      tool_name: 'Glob',
+      tool_input: { pattern: '**/*.ts', path: 'C:/repo/src' },
+    });
+    expect(adv).toBeNull();
+    db.close();
+  });
+
+  it('stays silent for a context-less tool with only old or sparse failures', () => {
+    const db = openDb(dbFile);
+    const failed = sessionWithFailure(null, null);
+    failed.toolCalls[0].toolName = 'Skill';
+    writeSession(db, failed); // one failure, timestamped far in the past
+    expect(buildAdvisory(db, { tool_name: 'Skill', tool_input: {} })).toBeNull();
+    db.close();
+  });
+
+  it('frequency-gates context-less tools: 3+ recent failures → one summary line', () => {
+    const db = openDb(dbFile);
+    const recentIso = new Date().toISOString();
+    const failed = sessionWithBashFailures('sk-sess', 'x', 3);
+    for (const tc of failed.toolCalls) {
+      tc.toolName = 'Skill';
+      tc.command = null;
+      tc.calledAt = recentIso;
+      tc.errorText = 'classifier error';
+    }
+    writeSession(db, failed);
+
+    const adv = buildAdvisory(db, { tool_name: 'Skill', tool_input: {} });
+    const ctx = adv?.hookSpecificOutput.additionalContext ?? '';
+    expect(ctx).toContain('Skill has failed');
+    expect(ctx).not.toContain('similar'); // summary line, not a replay list
+    db.close();
+  });
+
+  it('skips the "not read" warning when Write targets a file that does not exist', () => {
+    const db = openDb(dbFile);
+    const failed = sessionWithEditUnreadErrors('w-sess', 'src/old.ts', 2);
+    for (const tc of failed.toolCalls) tc.toolName = 'Write';
+    writeSession(db, failed);
+
+    const missing = path.join(dir, 'brand-new-file.ts');
+    expect(
+      buildAdvisory(db, { tool_name: 'Write', tool_input: { file_path: missing } }),
+    ).toBeNull();
+
+    // The same call against an EXISTING file still warns.
+    const existing = path.join(dir, 'already-there.ts');
+    fs.writeFileSync(existing, 'x');
+    const adv = buildAdvisory(db, { tool_name: 'Write', tool_input: { file_path: existing } });
+    expect(adv?.hookSpecificOutput.additionalContext).toContain('has not been read');
+    db.close();
+  });
+});
+
 describe('reflectOnSession — auto-lessons', () => {
   it('records a lesson for a command that failed 3+ times, and dedupes', () => {
     const db = openDb(dbFile);
@@ -247,6 +345,18 @@ describe('reflectOnSession — auto-lessons', () => {
     writeSession(db, sessionWithEditUnreadErrors('sess-b', 'src/bar.ts', 2));
     reflectOnSession(db, 'sess-a');
     reflectOnSession(db, 'sess-b'); // second session should not create a duplicate
+    expect(listLessons(db, {})).toHaveLength(1);
+    db.close();
+  });
+
+  it('dedupes Bash auto-lessons by trigger across sessions (same failure shape)', () => {
+    const db = openDb(dbFile);
+    // Same command shape (program + flag → trigger "ls -Recurse"), different args.
+    writeSession(db, sessionWithBashFailures('sess-a', 'ls -Recurse src', 2));
+    writeSession(db, sessionWithBashFailures('sess-b', 'ls -Recurse build', 2));
+
+    expect(reflectOnSession(db, 'sess-a')).toBe(1);
+    expect(reflectOnSession(db, 'sess-b')).toBe(0); // shape already covered
     expect(listLessons(db, {})).toHaveLength(1);
     db.close();
   });

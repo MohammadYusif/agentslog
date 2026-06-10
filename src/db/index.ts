@@ -6,8 +6,9 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import type { ParsedSession } from '../parser/types.js';
 import { dbPath } from '../utils/paths.js';
-import { migrate } from './migrate.js';
+import { migrate, schemaVersion } from './migrate.js';
 import { insertLesson, type LessonInput, recordLessonHit } from './queries.js';
+import { SCHEMA_VERSION } from './schema.js';
 
 let singleton: Database.Database | null = null;
 
@@ -43,8 +44,23 @@ export function openDbReadonly(): Database.Database {
   const file = dbPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
 
-  // Guarantee the schema exists / is migrated before opening read-only
-  // (a read-only handle can't create tables).
+  // Fast path: open read-only and confirm the schema is already current. This
+  // runs before every tool call (PreToolUse hook), so in steady state it must
+  // cost exactly one read-only open.
+  try {
+    const db = new Database(file, { readonly: true });
+    if (schemaVersion(db) === SCHEMA_VERSION) {
+      db.pragma('busy_timeout = 5000');
+      return db;
+    }
+    db.close();
+  } catch {
+    // File missing or unreadable — fall through to the writable path.
+  }
+
+  // Slow path (fresh or stale database): create/migrate over a short-lived
+  // writable connection, then reopen read-only (a read-only handle can't
+  // create tables).
   const rw = new Database(file);
   rw.pragma('journal_mode = WAL');
   migrate(rw);

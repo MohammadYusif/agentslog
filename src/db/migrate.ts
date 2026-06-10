@@ -18,6 +18,11 @@ function hasColumn(db: Database.Database, table: string, column: string): boolea
  * the schema version exactly once.
  */
 export function migrate(db: Database.Database): void {
+  // Fast path: schema already current. One indexed SELECT instead of the
+  // PRAGMA inspection + DDL below — this runs on every open, including the
+  // per-tool-call PreToolUse hook.
+  if (schemaVersion(db) === SCHEMA_VERSION) return;
+
   // CREATE TABLE IF NOT EXISTS only builds fresh databases; for an existing
   // database the new v2 columns must be added explicitly before running the
   // rest of SCHEMA_SQL (which also creates the new indexes referencing them).
@@ -52,4 +57,19 @@ function tableExists(db: Database.Database, name: string): boolean {
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?")
     .get(name);
   return row != null;
+}
+
+/**
+ * The recorded schema version, or null when the database is fresh (no
+ * schema_version table yet) or unreadable.
+ */
+export function schemaVersion(db: Database.Database): number | null {
+  try {
+    const row = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as
+      | { version: number }
+      | undefined;
+    return row?.version ?? null;
+  } catch {
+    return null; // table missing → fresh database
+  }
 }

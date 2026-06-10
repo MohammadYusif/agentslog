@@ -6,11 +6,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type Database from 'better-sqlite3';
+import pkg from '../../package.json' with { type: 'json' };
 import { MCP_TOOLS } from './tools.js';
 
 /** Build an MCP server exposing the agentslog read tools over `db`. */
 export function createServer(db: Database.Database): McpServer {
-  const server = new McpServer({ name: 'agentslog', version: '0.3.0' });
+  const server = new McpServer({ name: 'agentslog', version: pkg.version });
 
   for (const tool of MCP_TOOLS) {
     server.registerTool(

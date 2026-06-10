@@ -9,7 +9,7 @@
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg" alt="Node.js ≥20"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178C6.svg" alt="TypeScript"></a>
   <a href="https://www.npmjs.com/package/agentslog"><img src="https://img.shields.io/npm/v/agentslog.svg" alt="npm version"></a>
-  <a href="#-development"><img src="https://img.shields.io/badge/tests-128%20passing-brightgreen.svg" alt="128 tests passing"></a>
+  <a href="#-development"><img src="https://img.shields.io/badge/tests-136%20passing-brightgreen.svg" alt="136 tests passing"></a>
 </p>
 
 <p align="center"><strong>Your Claude Code history is a database. Query it like one.</strong></p>

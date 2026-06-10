@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { openDb, writeSession } from '../src/db/index.js';
+import { openDb, openDbReadonly, writeSession } from '../src/db/index.js';
 import {
   childSessions,
   listSessions,
@@ -13,6 +13,7 @@ import {
   statsTotals,
   toolCallsForSession,
 } from '../src/db/queries.js';
+import { SCHEMA_VERSION } from '../src/db/schema.js';
 import type { ParsedSession } from '../src/parser/types.js';
 
 function makeSession(overrides: Partial<ParsedSession> = {}): ParsedSession {
@@ -346,5 +347,44 @@ describe('sub-agent rollup', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe('parent'); // not the sub-agent
     db.close();
+  });
+});
+
+describe('resolveSession — LIKE escaping', () => {
+  it('treats wildcards in an id prefix literally', () => {
+    const db = openDb(dbFile);
+    writeSession(db, makeSession({ id: 'a_b-under', startedAt: '2026-01-05T00:00:00Z' }));
+    writeSession(db, makeSession({ id: 'axb-other', startedAt: '2026-01-06T00:00:00Z' }));
+
+    // Unescaped, 'a_' would match both ids (_ = any char) and throw ambiguity.
+    const row = resolveSession(db, 'a_');
+    expect(row?.id).toBe('a_b-under');
+    db.close();
+  });
+});
+
+describe('openDbReadonly', () => {
+  it('creates + migrates a fresh database, then serves read-only', () => {
+    const prev = process.env.AGENTSLOG_DB;
+    process.env.AGENTSLOG_DB = path.join(dbDir, 'readonly.db');
+    try {
+      // Fresh file: slow path must create the schema.
+      const db = openDbReadonly();
+      expect(db.readonly).toBe(true);
+      expect(db.prepare('SELECT COUNT(*) AS n FROM sessions').get()).toEqual({ n: 0 });
+      expect(() => db.prepare("INSERT INTO meta (key, value) VALUES ('k', 'v')").run()).toThrow();
+      db.close();
+
+      // Existing current file: fast path, schema version already recorded.
+      const db2 = openDbReadonly();
+      expect(db2.readonly).toBe(true);
+      expect(db2.prepare('SELECT version FROM schema_version LIMIT 1').get()).toEqual({
+        version: SCHEMA_VERSION,
+      });
+      db2.close();
+    } finally {
+      if (prev === undefined) delete process.env.AGENTSLOG_DB;
+      else process.env.AGENTSLOG_DB = prev;
+    }
   });
 });

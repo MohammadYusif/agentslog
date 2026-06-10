@@ -3,6 +3,7 @@
  */
 import type Database from 'better-sqlite3';
 import { normalizePath } from '../parser/claude-code.js';
+import { REJECTION_PATTERN } from '../parser/constants.js';
 
 export interface SessionRow {
   id: string;
@@ -139,9 +140,11 @@ export function resolveSession(db: Database.Database, prefix: string): SessionRo
     | undefined;
   if (exact) return exact;
 
+  // Escape LIKE wildcards so a prefix containing % or _ matches literally.
+  const escaped = prefix.replace(/[\\%_]/g, (m) => `\\${m}`);
   const rows = db
-    .prepare('SELECT * FROM sessions WHERE id LIKE ? ORDER BY started_at DESC')
-    .all(`${prefix}%`) as SessionRow[];
+    .prepare("SELECT * FROM sessions WHERE id LIKE ? ESCAPE '\\' ORDER BY started_at DESC")
+    .all(`${escaped}%`) as SessionRow[];
 
   if (rows.length === 0) return null;
   if (rows.length > 1) {
@@ -374,9 +377,9 @@ export interface ErrorFilters {
 export function recentErrors(db: Database.Database, filters: ErrorFilters = {}): ErrorRow[] {
   const clauses: string[] = [
     't.success = 0',
-    "(t.error_text IS NULL OR t.error_text NOT LIKE '%doesn''t want to proceed%')",
+    '(t.error_text IS NULL OR t.error_text NOT LIKE @rejection)',
   ];
-  const params: Record<string, unknown> = {};
+  const params: Record<string, unknown> = { rejection: `%${REJECTION_PATTERN}%` };
 
   if (filters.sinceIso) {
     // Window on when the failure happened (its call time), not when the session

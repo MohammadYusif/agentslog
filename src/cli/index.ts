@@ -7,6 +7,7 @@ import chalk from 'chalk';
  * handler in ./commands so the parsing surface stays thin and testable.
  */
 import { Command } from 'commander';
+import pkg from '../../package.json' with { type: 'json' };
 import { runDbVacuum } from './commands/db.js';
 import { runDiff } from './commands/diff.js';
 import { runErrors } from './commands/errors.js';
@@ -38,7 +39,7 @@ const program = new Command();
 program
   .name('agentslog')
   .description('Query your Claude Code session history as a local SQLite database')
-  .version('0.6.0');
+  .version(pkg.version);
 
 program
   .command('setup')

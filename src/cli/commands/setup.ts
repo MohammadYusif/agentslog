@@ -164,9 +164,13 @@ interface Settings {
   [k: string]: unknown;
 }
 
-/** The agentslog hooks we install, by Claude Code event name. */
+/**
+ * The agentslog hooks we install, by Claude Code event name. PreToolUse has no
+ * matcher (= all tools): the advisory only speaks when it has something
+ * relevant, and lessons exist for non-Bash tools too (Edit/Write/MCP tools).
+ */
 export const DESIRED_HOOKS: { event: string; entry: HookEntry }[] = [
-  { event: 'PreToolUse', entry: { matcher: 'Bash', hooks: [cmd('agentslog hook check')] } },
+  { event: 'PreToolUse', entry: { hooks: [cmd('agentslog hook check')] } },
   { event: 'Stop', entry: { hooks: [cmd('agentslog hook reflect')] } },
   { event: 'SessionStart', entry: { hooks: [cmd('agentslog hook session-start')] } },
 ];
@@ -188,10 +192,18 @@ export function mergeHooks(settings: Settings): { settings: Settings; added: str
     const list = [...(hooks[event] ?? [])];
     hooks[event] = list;
     const command = entry.hooks[0].command;
-    const present = list.some((e) => e.hooks?.some((h) => h.command === command));
-    if (!present) {
+    const existingIdx = list.findIndex((e) => e.hooks?.some((h) => h.command === command));
+    if (existingIdx === -1) {
       list.push(entry);
       added.push(command);
+    } else if (list[existingIdx].matcher !== entry.matcher) {
+      // Upgrade an entry installed by an older version whose matcher differs
+      // (e.g. the former 'Bash'-only PreToolUse matcher) to the current shape.
+      const upgraded = { ...list[existingIdx] };
+      if (entry.matcher === undefined) delete upgraded.matcher;
+      else upgraded.matcher = entry.matcher;
+      list[existingIdx] = upgraded;
+      added.push(`${command} (matcher updated)`);
     }
   }
   return { settings: next, added };

@@ -9,6 +9,7 @@
  * - `ingest` (Stop/SessionEnd): refreshes the index so cross-session memory
  *   stays current in real time.
  */
+import fs from 'node:fs';
 import type Database from 'better-sqlite3';
 import { openDb, openDbReadonly, recordLessonHitStandalone } from '../../db/index.js';
 import {
@@ -20,12 +21,19 @@ import {
   repeatedFailures,
   sessionEfficiency,
 } from '../../db/queries.js';
-import { normalizePath } from '../../parser/claude-code.js';
-import { relativeTime } from '../../utils/time.js';
+import { extractFilePath, normalizePath } from '../../parser/claude-code.js';
+import { FILE_NOT_READ_PATTERN } from '../../parser/constants.js';
+import { relativeTime, windowCutoffIso } from '../../utils/time.js';
 import { runIngest } from './ingest.js';
 
-/** Substring present in Claude Code's "file not pre-read" error messages. */
-const FILE_NOT_READ_PATTERN = 'has not been read';
+/**
+ * Gate for calls with no command/file context (Skill, MCP tools, bare Glob, …):
+ * there is nothing to match similarity on, so raw past failures are surfaced
+ * only as a one-line frequency summary, and only when the tool has failed at
+ * least this many times within {@link NO_CONTEXT_WINDOW}.
+ */
+const NO_CONTEXT_MIN_FAILURES = 3;
+const NO_CONTEXT_WINDOW = '7d';
 
 /** Read all of stdin (hooks pipe JSON in). Empty string if attached to a TTY. */
 async function readStdin(): Promise<string> {
@@ -70,9 +78,9 @@ export interface HookAdvisory {
 /**
  * Build a PreToolUse advisory combining (a) distilled lessons that match the
  * imminent action and (b) raw past failures of the same tool, or null when
- * there's nothing relevant. Pure (db + payload in, object out) — unit-testable
- * without stdin. Read-only: does not bump lesson hit counts (PreToolUse is the
- * hot path; recall accounting happens in the SessionStart hook instead).
+ * there's nothing relevant. Unit-testable without stdin (db + payload in,
+ * object out). Bumps the hit counter of each lesson that fires — that happens
+ * here (not at session start) so `hits` reflects real recall, not noise.
  */
 export function buildAdvisory(
   db: Database.Database,
@@ -83,7 +91,9 @@ export function buildAdvisory(
 
   const input = payload.tool_input ?? {};
   const command = typeof input.command === 'string' ? input.command : null;
-  const filePath = typeof input.file_path === 'string' ? normalizePath(input.file_path) : null;
+  // Same per-tool extraction as ingest (file_path for Edit/Read/…, path for
+  // Grep/Glob), so the value compares against what tool_calls.file_path stores.
+  const filePath = extractFilePath(tool, input);
 
   const sections: string[] = [];
 
@@ -107,33 +117,60 @@ export function buildAdvisory(
   }
 
   // (b) Raw past failures of this exact tool, newest first.
-  const past = recentErrors(db, { tool, limit: 50 });
-  const matches = past.filter((e: ErrorRow) => {
-    if (command && e.command) return commandsSimilar(command, e.command);
-    if (filePath && e.file_path) return normalizePath(e.file_path) === filePath;
-    return !command && !filePath;
-  });
-  if (matches.length > 0) {
-    const lines = matches.slice(0, 3).map((e) => {
-      const when = e.called_at ? relativeTime(e.called_at) : 'previously';
-      const ctx = e.command ?? e.file_path ?? '';
-      const err = (e.error_text ?? '').replace(/\s+/g, ' ').slice(0, 140);
-      return `- ${when}: \`${ctx.slice(0, 80)}\` → ${err}`;
+  //
+  // With a command or file path we can match on similarity. Without either
+  // (Skill, MCP tools, a bare Glob, …) there is nothing to compare, so listing
+  // past failures would just replay every failure of the tool regardless of
+  // relevance — noise that trains the agent to ignore the advisories. In that
+  // case only a frequency signal is surfaced: the tool failing repeatedly in
+  // the last few days is worth a heads-up even without a specific match.
+  const hasContext = Boolean(command || filePath);
+  let matches: ErrorRow[] = [];
+  if (hasContext) {
+    const past = recentErrors(db, { tool, limit: 50 });
+    matches = past.filter((e: ErrorRow) => {
+      if (command && e.command) return commandsSimilar(command, e.command);
+      if (filePath && e.file_path) return normalizePath(e.file_path) === filePath;
+      return false;
     });
-    sections.push(`⚠ ${matches.length} similar ${tool} failure(s) before:\n${lines.join('\n')}`);
+    if (matches.length > 0) {
+      const lines = matches.slice(0, 3).map((e) => {
+        const when = e.called_at ? relativeTime(e.called_at) : 'previously';
+        const ctx = e.command ?? e.file_path ?? '';
+        const err = (e.error_text ?? '').replace(/\s+/g, ' ').slice(0, 140);
+        return `- ${when}: \`${ctx.slice(0, 80)}\` → ${err}`;
+      });
+      sections.push(`⚠ ${matches.length} similar ${tool} failure(s) before:\n${lines.join('\n')}`);
+    }
+  } else {
+    const recent = recentErrors(db, {
+      tool,
+      sinceIso: windowCutoffIso(NO_CONTEXT_WINDOW),
+      limit: NO_CONTEXT_MIN_FAILURES,
+    });
+    if (recent.length >= NO_CONTEXT_MIN_FAILURES) {
+      const latest = recent[0];
+      const err = (latest.error_text ?? '').replace(/\s+/g, ' ').slice(0, 120);
+      sections.push(
+        `⚠ ${tool} has failed ${recent.length}+ time(s) in the last ${NO_CONTEXT_WINDOW} — ` +
+          `most recent: ${err}`,
+      );
+    }
   }
 
   // For Edit/Write: scan all past errors of this tool for the "file not read"
   // pattern — it's tool-level, not file-specific, so the per-file match above
   // misses it for files that haven't failed before.
-  // Skip if the per-file match already surfaced this exact pattern to avoid
-  // emitting two warnings for the same root cause.
-  if (tool === 'Edit' || tool === 'Write') {
+  // Skip if the per-file match already surfaced this exact pattern (two
+  // warnings for one root cause), and skip when Write targets a file that
+  // does not exist yet — creating a new file requires no prior Read.
+  const isNewFileWrite = tool === 'Write' && filePath != null && !fs.existsSync(filePath);
+  if ((tool === 'Edit' || tool === 'Write') && !isNewFileWrite) {
     const alreadyCoveredByFileMatch = matches.some((m: ErrorRow) =>
       (m.error_text ?? '').includes(FILE_NOT_READ_PATTERN),
     );
     if (!alreadyCoveredByFileMatch) {
-      const unreadCount = past.filter((e: ErrorRow) =>
+      const unreadCount = recentErrors(db, { tool, limit: 50 }).filter((e: ErrorRow) =>
         (e.error_text ?? '').includes(FILE_NOT_READ_PATTERN),
       ).length;
       if (unreadCount > 0) {
@@ -183,7 +220,7 @@ interface SessionHookPayload {
 /**
  * Record deterministic auto-lessons from the failures of a just-finished
  * session. Pure (db + ids in) so it's unit-testable. Only the unambiguous
- * "identical command failed ≥3×" case fires — high precision, low noise.
+ * "identical command failed ≥2×" case fires — high precision, low noise.
  * Returns how many lessons were written.
  */
 export function reflectOnSession(db: Database.Database, sessionId: string): number {
@@ -194,11 +231,19 @@ export function reflectOnSession(db: Database.Database, sessionId: string): numb
 
   let written = 0;
 
-  // Bash: identical command failed multiple times.
+  // Bash: identical command failed multiple times. Dedup by (scope, trigger):
+  // the rule text embeds the exact command and error, so without this check
+  // every variant of the same kind of failure would pile up as a new lesson.
+  const autoLessonExists = db.prepare(
+    `SELECT 1 FROM lessons
+     WHERE source = 'auto' AND scope = ? AND tool = ? AND trigger = ?
+     LIMIT 1`,
+  );
   for (const rf of repeatedFailures(db, sessionId)) {
     if (rf.count < 2) continue;
     const shape = commandShape(rf.command);
     const trigger = [shape.program, ...shape.flags].join(' ').slice(0, 60).trim();
+    if (trigger && autoLessonExists.get(scope, 'Bash', trigger)) continue;
     const err = (rf.error_text ?? '').replace(/\s+/g, ' ').slice(0, 120);
     insertLesson(db, {
       rule: `\`${rf.command.slice(0, 80)}\` failed ${rf.count}× in a row: ${err}`,
@@ -221,11 +266,11 @@ export function reflectOnSession(db: Database.Database, sessionId: string): numb
        FROM tool_calls
        WHERE session_id = ? AND success = 0
          AND tool_name IN ('Edit', 'Write')
-         AND error_text LIKE '%${FILE_NOT_READ_PATTERN}%'
+         AND error_text LIKE ?
        GROUP BY tool_name
        HAVING COUNT(*) >= 2`,
     )
-    .all(sessionId) as { tool_name: string; count: number }[];
+    .all(sessionId, `%${FILE_NOT_READ_PATTERN}%`) as { tool_name: string; count: number }[];
 
   for (const rf of unreadByTool) {
     const alreadyExists = db
@@ -285,11 +330,12 @@ export async function runHookSessionStart(): Promise<void> {
     return;
   }
   const project = payload.cwd ? normalizePath(payload.cwd) : '';
-  const db = openDb(); // writable: SessionStart bumps recall counters
+  // Read-only: hits are NOT bumped here — they're bumped in buildAdvisory()
+  // when a lesson actually fires for a specific tool call, giving meaningful
+  // per-lesson signal.
+  const db = openDbReadonly();
 
   // Top 5 lessons for this project + global, ranked by hits then confidence.
-  // Hits are NOT bumped here — they're bumped in buildAdvisory() when a lesson
-  // actually fires for a specific tool call, giving meaningful per-lesson signal.
   const lessons = lessonsForContext(db, { project, limit: 5 });
 
   // Was the most recent session in this project flagged inefficient?

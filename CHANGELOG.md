@@ -4,6 +4,53 @@ All notable changes to **agentslog** are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-06-10
+
+### Changed
+
+- **PreToolUse advisories no longer replay unrelated failures.** For tool calls
+  with no command or file path to match on (Skill, MCP tools, a bare Glob…),
+  the hook previously surfaced *every* past failure of that tool. It now emits
+  at most a one-line frequency summary, and only when the tool failed ≥ 3 times
+  in the last 7 days. Precise matching is unchanged where context exists.
+
+- **Glob/Grep advisories now match on their `path` input.** `buildAdvisory`
+  reuses the parser's `extractFilePath`, so the hook compares the same value
+  ingest stores in `tool_calls.file_path`.
+
+- **`setup --with-hooks` installs PreToolUse for all tools, not just Bash.**
+  Lessons exist for Edit/Write/MCP tools too; the advisory only speaks when it
+  has something relevant. Re-running `setup` upgrades a previously installed
+  Bash-only matcher in place.
+
+### Fixed
+
+- **No "Read before Write" warning when Write creates a new file.** The
+  tool-level "file not read" advisory is skipped when the target file does not
+  exist — creating a file requires no prior Read.
+
+- **Bash auto-lessons deduplicate by failure shape.** `reflectOnSession` now
+  skips recording when an auto-lesson with the same scope, tool, and trigger
+  already exists, instead of accumulating near-identical lessons whose rule
+  text differs only in arguments or error detail.
+
+- **`--version` and the MCP server version now come from package.json.** They
+  were hardcoded and stale (`0.6.0` and `0.3.0` respectively).
+
+- **Session-id prefix lookup escapes LIKE wildcards.** A prefix containing
+  `%` or `_` now matches literally in `show`/`diff`/`get_session`.
+
+- **Stale comments corrected** in `hook.ts` (lesson-hit accounting location,
+  auto-lesson threshold) after the 0.8.0 behavior changes.
+
+### Performance
+
+- **`hook check` steady state is one read-only DB open.** `openDbReadonly`
+  previously opened a writable connection and ran migration scaffolding on
+  every call (i.e. before every tool call in hooked sessions); it now opens
+  read-only first and falls back to the writable path only for a fresh or
+  stale database. `migrate()` also early-exits on a current schema version.
+
 ## [0.7.1] — 2026-06-07
 
 ### Fixed
