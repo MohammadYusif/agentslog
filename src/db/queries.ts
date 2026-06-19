@@ -743,6 +743,15 @@ export interface LessonContext {
   command?: string | null;
   file?: string | null;
   limit?: number | null;
+  /**
+   * Advisory mode: only surface a lesson when its relevance can be established.
+   * With a command/file, triggers are matched as usual. WITHOUT either (MCP
+   * tools, ToolSearch, a bare Glob, …), a non-null trigger has nothing to match
+   * against, so only truly-general (triggerless) lessons may fire. Leave unset
+   * for the session-start digest, which intentionally shows top lessons
+   * trigger-agnostically.
+   */
+  requireRelevance?: boolean;
 }
 
 /**
@@ -750,6 +759,10 @@ export interface LessonContext {
  * action. With a command/file, only lessons whose `trigger` is null or appears
  * in that command/file are returned; with none (e.g. at session start), the top
  * scoped lessons are returned. Ordered by `hits` then `confidence`.
+ *
+ * In advisory mode (`requireRelevance`), a contextless call (no command/file)
+ * is restricted to triggerless lessons — a triggered lesson can't be shown
+ * relevant with nothing to match against, so it must not fire.
  */
 export function lessonsForContext(db: Database.Database, ctx: LessonContext): LessonRow[] {
   const clauses = ['scope IN (@proj, @global)'];
@@ -772,6 +785,11 @@ export function lessonsForContext(db: Database.Database, ctx: LessonContext): Le
       params.file = ctx.file;
     }
     clauses.push(`(${subs.join(' OR ')})`);
+  } else if (ctx.requireRelevance) {
+    // No command/file to match a trigger against: only triggerless lessons can
+    // be established as relevant. Without this, contextless advisory calls
+    // surface every tool-agnostic lesson purely by `hits` — irrelevant noise.
+    clauses.push('trigger IS NULL');
   }
 
   const limit = ctx.limit && ctx.limit > 0 ? Math.floor(ctx.limit) : 5;

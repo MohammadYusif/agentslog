@@ -14,3 +14,12 @@ export const REJECTION_PATTERN = "doesn't want to proceed";
 
 /** Substring of Claude Code's "file not pre-read" Edit/Write error messages. */
 export const FILE_NOT_READ_PATTERN = 'has not been read';
+
+/**
+ * Substring of the Edit/Write error emitted when a file changed between the
+ * Read and the Edit ("File has been modified since read, either by the user or
+ * by a linter…") — typically a formatter rewriting the file on save. Distinct
+ * from {@link FILE_NOT_READ_PATTERN}: this survives an initial Read, so the fix
+ * is to re-Read immediately before the Edit rather than to Read at all.
+ */
+export const FILE_MODIFIED_SINCE_READ_PATTERN = 'has been modified since read';

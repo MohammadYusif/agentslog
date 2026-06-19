@@ -1,6 +1,6 @@
 {
   "name": "agentslog",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Query your Claude Code session history as a local SQLite database",
   "type": "module",
   "bin": {

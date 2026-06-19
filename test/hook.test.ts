@@ -87,6 +87,16 @@ function sessionWithEditUnreadErrors(id: string, filePath: string, count: number
   };
 }
 
+/** Same as the unread helper but with the real "modified since read" text. */
+function sessionWithEditModifiedErrors(id: string, filePath: string, count: number): ParsedSession {
+  const s = sessionWithEditUnreadErrors(id, filePath, count);
+  for (const tc of s.toolCalls) {
+    tc.errorText =
+      'File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.';
+  }
+  return s;
+}
+
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentslog-hook-'));
   dbFile = path.join(dir, 'db.sqlite');
@@ -236,6 +246,41 @@ describe('hook check — advisory precision', () => {
       tool_input: { pattern: '**/*.ts', path: 'C:/repo/src' },
     });
     expect(adv).toBeNull();
+    db.close();
+  });
+
+  it('warns to re-Read when past sessions hit "modified since read" for this tool', () => {
+    const db = openDb(dbFile);
+    // Past "modified since read" failures on a DIFFERENT file → tool-level warn.
+    writeSession(db, sessionWithEditModifiedErrors('mod-sess', 'src/auth.ts', 2));
+    const adv = buildAdvisory(db, {
+      tool_name: 'Edit',
+      tool_input: { file_path: 'src/new.ts' },
+    });
+    expect(adv).not.toBeNull();
+    const ctx = adv?.hookSpecificOutput.additionalContext ?? '';
+    expect(ctx).toContain('modified since read');
+    expect(ctx).toContain('new.ts');
+    // It must NOT misfire the "not read" warning — different root cause.
+    expect(ctx).not.toContain('has not been read');
+    db.close();
+  });
+
+  it('does NOT leak a triggered, tool-agnostic lesson on a contextless tool call', () => {
+    const db = openDb(dbFile);
+    // A real lesson stored with tool:null + a specific trigger — the exact
+    // shape (#29 remark-parse) that used to fire before every MCP/ToolSearch
+    // call because contextless calls skipped trigger matching entirely.
+    insertLesson(db, {
+      rule: 'Some remark-parse heading gotcha',
+      scope: 'global',
+      tool: null,
+      trigger: 'remark-parse inline heading title',
+      source: 'user',
+    });
+    expect(
+      buildAdvisory(db, { tool_name: 'mcp__agentslog__get_stats', tool_input: {} }),
+    ).toBeNull();
     db.close();
   });
 

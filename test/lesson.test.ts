@@ -93,6 +93,28 @@ describe('lessonsForContext (recall)', () => {
     d.close();
   });
 
+  it('requireRelevance: drops triggered lessons on a contextless advisory call', () => {
+    const d = db();
+    add(d, { rule: 'general', scope: 'global' }); // no trigger
+    add(d, { rule: 'specific', scope: 'global', tool: null, trigger: 'remark-parse' });
+    // Session-start digest (no requireRelevance) still shows both.
+    expect(
+      lessonsForContext(d, { project: '/repo' })
+        .map((l) => l.rule)
+        .sort(),
+    ).toEqual(['general', 'specific']);
+    // Advisory mode with a tool but no command/file: the triggered lesson has
+    // nothing to match against, so only the triggerless one may fire.
+    expect(
+      lessonsForContext(d, {
+        project: '/repo',
+        tool: 'mcp__agentslog__get_stats',
+        requireRelevance: true,
+      }).map((l) => l.rule),
+    ).toEqual(['general']);
+    d.close();
+  });
+
   it('ranks by hits then confidence and respects the limit', () => {
     const d = db();
     const lowId = add(d, { rule: 'low', scope: 'global', confidence: 0.9 });

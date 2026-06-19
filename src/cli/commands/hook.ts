@@ -22,7 +22,7 @@ import {
   sessionEfficiency,
 } from '../../db/queries.js';
 import { extractFilePath, normalizePath } from '../../parser/claude-code.js';
-import { FILE_NOT_READ_PATTERN } from '../../parser/constants.js';
+import { FILE_MODIFIED_SINCE_READ_PATTERN, FILE_NOT_READ_PATTERN } from '../../parser/constants.js';
 import { relativeTime, windowCutoffIso } from '../../utils/time.js';
 import { runIngest } from './ingest.js';
 
@@ -98,12 +98,17 @@ export function buildAdvisory(
   const sections: string[] = [];
 
   // (a) Distilled lessons that match this tool + command/file.
+  // requireRelevance: a triggered lesson must only fire when its trigger
+  // appears in the command/file. For a contextless tool call (MCP tools,
+  // ToolSearch, a bare Glob) there's nothing to match, so only triggerless
+  // lessons surface — otherwise every tool-agnostic lesson leaks in by hits.
   const lessons = lessonsForContext(db, {
     project: payload.cwd ? normalizePath(payload.cwd) : '',
     tool,
     command,
     file: filePath,
     limit: 3,
+    requireRelevance: true,
   });
   if (lessons.length > 0) {
     const ls = lessons.map((l: LessonRow) => `- ${l.rule}`).join('\n');
@@ -177,6 +182,26 @@ export function buildAdvisory(
         sections.push(
           `🔒 Read ${filePath ? `\`${filePath}\`` : 'the file'} before calling ${tool} — ` +
             `past sessions hit "File has not been read yet" ${unreadCount}× with this tool.`,
+        );
+      }
+    }
+
+    // Sibling to the not-read pattern: a linter/formatter can rewrite the file
+    // between the Read and the Edit ("File has been modified since read"). This
+    // survives an initial Read, so the fix is to re-Read immediately before the
+    // Edit (don't interleave other tool calls). Tool-level, like the above.
+    const modifiedAlreadyCovered = matches.some((m: ErrorRow) =>
+      (m.error_text ?? '').includes(FILE_MODIFIED_SINCE_READ_PATTERN),
+    );
+    if (!modifiedAlreadyCovered) {
+      const modifiedCount = recentErrors(db, { tool, limit: 50 }).filter((e: ErrorRow) =>
+        (e.error_text ?? '').includes(FILE_MODIFIED_SINCE_READ_PATTERN),
+      ).length;
+      if (modifiedCount > 0) {
+        sections.push(
+          `🔄 Re-Read ${filePath ? `\`${filePath}\`` : 'the file'} immediately before this ${tool} — ` +
+            `past sessions hit "File has been modified since read" ${modifiedCount}× ` +
+            `(a linter/formatter rewrote it between Read and ${tool}).`,
         );
       }
     }
