@@ -7,7 +7,13 @@ import Database from 'better-sqlite3';
 import type { ParsedSession } from '../parser/types.js';
 import { dbPath } from '../utils/paths.js';
 import { migrate, schemaVersion } from './migrate.js';
-import { insertLesson, type LessonInput, recordLessonHit } from './queries.js';
+import {
+  type AdvisoryFireInput,
+  insertLesson,
+  type LessonInput,
+  recordAdvisoryFires,
+  recordLessonHit,
+} from './queries.js';
 import { SCHEMA_VERSION } from './schema.js';
 
 let singleton: Database.Database | null = null;
@@ -105,6 +111,27 @@ export function recordLessonHitStandalone(ids: number[]): void {
   migrate(db);
   try {
     recordLessonHit(db, ids);
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Append advisory-fire rows over a **short-lived** writable connection, then
+ * close immediately. Used by the PreToolUse hook, whose main handle is
+ * read-only — the brief writer is fine under WAL. Best-effort by design: the
+ * caller wraps this in try/catch so logging never delays or fails a tool call.
+ */
+export function recordAdvisoryFiresStandalone(fires: AdvisoryFireInput[]): void {
+  if (fires.length === 0) return;
+  const file = dbPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const db = new Database(file);
+  db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');
+  migrate(db);
+  try {
+    recordAdvisoryFires(db, fires);
   } finally {
     db.close();
   }

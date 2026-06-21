@@ -11,8 +11,14 @@
  */
 import fs from 'node:fs';
 import type Database from 'better-sqlite3';
-import { openDb, openDbReadonly, recordLessonHitStandalone } from '../../db/index.js';
 import {
+  openDb,
+  openDbReadonly,
+  recordAdvisoryFiresStandalone,
+  recordLessonHitStandalone,
+} from '../../db/index.js';
+import {
+  type AdvisoryFireInput,
   type ErrorRow,
   insertLesson,
   type LessonRow,
@@ -47,6 +53,7 @@ interface PreToolUsePayload {
   tool_name?: string;
   tool_input?: Record<string, unknown>;
   cwd?: string;
+  session_id?: string;
 }
 
 /** Program + flags + first-two-tokens fingerprint of a shell command. */
@@ -95,7 +102,14 @@ export function buildAdvisory(
   // Grep/Glob), so the value compares against what tool_calls.file_path stores.
   const filePath = extractFilePath(tool, input);
 
+  const project = payload.cwd ? normalizePath(payload.cwd) : null;
   const sections: string[] = [];
+  // Interception log: one entry per nudge emitted below, persisted before we
+  // return so the `advisories` report can count every kind (not just lessons).
+  const fires: AdvisoryFireInput[] = [];
+  const fire = (kind: AdvisoryFireInput['kind'], detail: string): void => {
+    fires.push({ sessionId: payload.session_id ?? null, project, tool, kind, detail });
+  };
 
   // (a) Distilled lessons that match this tool + command/file.
   // requireRelevance: a triggered lesson must only fire when its trigger
@@ -103,7 +117,7 @@ export function buildAdvisory(
   // ToolSearch, a bare Glob) there's nothing to match, so only triggerless
   // lessons surface — otherwise every tool-agnostic lesson leaks in by hits.
   const lessons = lessonsForContext(db, {
-    project: payload.cwd ? normalizePath(payload.cwd) : '',
+    project: project ?? '',
     tool,
     command,
     file: filePath,
@@ -113,6 +127,7 @@ export function buildAdvisory(
   if (lessons.length > 0) {
     const ls = lessons.map((l: LessonRow) => `- ${l.rule}`).join('\n');
     sections.push(`📌 Lesson(s) you've recorded for this:\n${ls}`);
+    for (const l of lessons) fire('lesson', l.rule.slice(0, 120));
     // Bump hits only for lessons that actually fired — not all lessons at session start.
     try {
       recordLessonHitStandalone(lessons.map((l: LessonRow) => l.id));
@@ -146,6 +161,7 @@ export function buildAdvisory(
         return `- ${when}: \`${ctx.slice(0, 80)}\` → ${err}`;
       });
       sections.push(`⚠ ${matches.length} similar ${tool} failure(s) before:\n${lines.join('\n')}`);
+      fire('similar_failure', `${matches.length} similar ${tool} failure(s)`);
     }
   } else {
     const recent = recentErrors(db, {
@@ -160,6 +176,7 @@ export function buildAdvisory(
         `⚠ ${tool} has failed ${recent.length}+ time(s) in the last ${NO_CONTEXT_WINDOW} — ` +
           `most recent: ${err}`,
       );
+      fire('frequency', `${tool} failed ${recent.length}+ time(s) in ${NO_CONTEXT_WINDOW}`);
     }
   }
 
@@ -183,6 +200,7 @@ export function buildAdvisory(
           `🔒 Read ${filePath ? `\`${filePath}\`` : 'the file'} before calling ${tool} — ` +
             `past sessions hit "File has not been read yet" ${unreadCount}× with this tool.`,
         );
+        fire('not_read', `Read before ${tool} ("File has not been read yet" ×${unreadCount})`);
       }
     }
 
@@ -203,11 +221,23 @@ export function buildAdvisory(
             `past sessions hit "File has been modified since read" ${modifiedCount}× ` +
             `(a linter/formatter rewrote it between Read and ${tool}).`,
         );
+        fire(
+          'modified_since_read',
+          `Re-Read before ${tool} (modified since read ×${modifiedCount})`,
+        );
       }
     }
   }
 
   if (sections.length === 0) return null;
+
+  // Persist the interception log (best-effort: a transient DB lock must never
+  // delay or fail the tool call this hook is gating).
+  try {
+    recordAdvisoryFiresStandalone(fires);
+  } catch {
+    /* non-fatal */
+  }
 
   return {
     hookSpecificOutput: {

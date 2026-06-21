@@ -2,7 +2,7 @@
  * SQLite schema definition and the current schema version.
  */
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -99,4 +99,22 @@ CREATE INDEX IF NOT EXISTS idx_lessons_tool  ON lessons(tool);
 -- (when "agentslog setup" first ran) used as a fallback baseline for the
 -- before/after "impact" report.
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+
+-- v6: one row per PreToolUse advisory the hook emits *before* a tool runs — the
+-- interception log. lessons.hits counts only the lesson kind; this table also
+-- captures the similar-failure / frequency / file-constraint advisories, each
+-- tagged by 'kind', so the "advisories" report covers every nudge precisely.
+-- Append-only; never blocks a tool (the hook stays advisory).
+CREATE TABLE IF NOT EXISTS advisory_fires (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  fired_at    TEXT NOT NULL,
+  session_id  TEXT,            -- session whose imminent tool call triggered it (nullable)
+  project     TEXT,            -- normalized cwd scope, or NULL when unknown
+  tool        TEXT NOT NULL,   -- the tool that was about to run
+  kind        TEXT NOT NULL,   -- 'lesson' | 'similar_failure' | 'frequency' | 'not_read' | 'modified_since_read'
+  detail      TEXT             -- short human-readable summary of the nudge
+);
+CREATE INDEX IF NOT EXISTS idx_af_fired ON advisory_fires(fired_at);
+CREATE INDEX IF NOT EXISTS idx_af_tool  ON advisory_fires(tool);
+CREATE INDEX IF NOT EXISTS idx_af_kind  ON advisory_fires(kind);
 `;

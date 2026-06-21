@@ -72,6 +72,7 @@ describe('MCP tool registry', () => {
     const names = MCP_TOOLS.map((t) => t.name).sort();
     expect(names).toEqual(
       [
+        'advisory_stats',
         'find_sessions_by_file',
         'find_sessions_by_tool',
         'get_session',

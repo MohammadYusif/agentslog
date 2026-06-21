@@ -8,6 +8,7 @@ import chalk from 'chalk';
  */
 import { Command } from 'commander';
 import pkg from '../../package.json' with { type: 'json' };
+import { runAdvisories } from './commands/advisories.js';
 import { runDbVacuum } from './commands/db.js';
 import { runDiff } from './commands/diff.js';
 import { runErrors } from './commands/errors.js';
@@ -72,6 +73,15 @@ program
   .option('--json', 'output raw JSON')
   .action((opts) => {
     runImpact({ since: opts.since, json: opts.json });
+  });
+
+program
+  .command('advisories')
+  .description('Report tool calls intercepted by PreToolUse advisories, by kind and tool')
+  .option('--last <window>', 'restrict to a time window, e.g. 7d')
+  .option('--json', 'output raw JSON')
+  .action((opts) => {
+    runAdvisories({ last: opts.last, json: opts.json });
   });
 
 program

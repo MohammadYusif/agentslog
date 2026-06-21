@@ -10,6 +10,7 @@ import type Database from 'better-sqlite3';
 import { z } from 'zod';
 import { recordLessonHitStandalone, recordLessonStandalone } from '../db/index.js';
 import {
+  advisoryFireStats,
   childSessions,
   filesForSession,
   lessonsForContext,
@@ -212,6 +213,14 @@ export const MCP_TOOLS: McpTool[] = [
       } catch {}
       return lessons;
     },
+  },
+  {
+    name: 'advisory_stats',
+    title: 'Advisory interception stats',
+    description:
+      'Report how many imminent tool calls agentslog intercepted with a PreToolUse advisory — broken down by kind (lesson recall, similar past failure, repeated-failure frequency, read-before-edit / re-read constraints) and by tool. These are non-blocking nudges emitted before a tool ran, logged from v6 onward.',
+    schema: { last: z.string().optional().describe(lastDesc) },
+    handler: (db, a) => advisoryFireStats(db, windowCutoffIso(a.last as string | undefined)),
   },
   {
     name: 'review_session',

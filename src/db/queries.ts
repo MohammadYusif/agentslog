@@ -813,6 +813,106 @@ export function recordLessonHit(db: Database.Database, ids: number[]): void {
 }
 
 // ----------------------------------------------------------------------------
+// Advisory fires (v6) — the PreToolUse interception log
+// ----------------------------------------------------------------------------
+
+/** The kinds of PreToolUse advisory the hook can emit before a tool runs. */
+export type AdvisoryKind =
+  | 'lesson'
+  | 'similar_failure'
+  | 'frequency'
+  | 'not_read'
+  | 'modified_since_read';
+
+export interface AdvisoryFireInput {
+  /** Session whose imminent tool call triggered the advisory (nullable). */
+  sessionId?: string | null;
+  /** Normalized cwd scope, or null when unknown. */
+  project?: string | null;
+  /** The tool that was about to run. */
+  tool: string;
+  kind: AdvisoryKind;
+  /** Short human-readable summary of the nudge. */
+  detail?: string | null;
+}
+
+/** Append advisory-fire rows (one per nudge emitted in a single PreToolUse). */
+export function recordAdvisoryFires(db: Database.Database, fires: AdvisoryFireInput[]): void {
+  if (fires.length === 0) return;
+  const now = new Date().toISOString();
+  const stmt = db.prepare(
+    `INSERT INTO advisory_fires (fired_at, session_id, project, tool, kind, detail)
+     VALUES (@firedAt, @sessionId, @project, @tool, @kind, @detail)`,
+  );
+  const tx = db.transaction((rows: AdvisoryFireInput[]) => {
+    for (const f of rows) {
+      stmt.run({
+        firedAt: now,
+        sessionId: f.sessionId ?? null,
+        project: f.project ?? null,
+        tool: f.tool,
+        kind: f.kind,
+        detail: f.detail ?? null,
+      });
+    }
+  });
+  tx(fires);
+}
+
+export interface AdvisoryFireStats {
+  total: number;
+  /** Firings grouped by kind, most frequent first. */
+  byKind: { kind: string; count: number }[];
+  /** Firings grouped by the tool that was about to run, most frequent first. */
+  byTool: { tool: string; count: number }[];
+  /** ISO of the earliest / latest firing in the window, or null when empty. */
+  firstFiredAt: string | null;
+  lastFiredAt: string | null;
+}
+
+/**
+ * Aggregate the advisory-fire log over an optional time window. This is the
+ * precise "how many tool calls did agentslog intercept" report — every nudge,
+ * across all kinds, not just lesson recalls.
+ */
+export function advisoryFireStats(
+  db: Database.Database,
+  sinceIso?: string | null,
+): AdvisoryFireStats {
+  const where = sinceIso ? 'WHERE fired_at >= @since' : '';
+  const params = sinceIso ? { since: sinceIso } : {};
+
+  const totalRow = db
+    .prepare(
+      `SELECT COUNT(*) AS total, MIN(fired_at) AS first, MAX(fired_at) AS last
+       FROM advisory_fires ${where}`,
+    )
+    .get(params) as { total: number; first: string | null; last: string | null };
+
+  const byKind = db
+    .prepare(
+      `SELECT kind, COUNT(*) AS count FROM advisory_fires ${where}
+       GROUP BY kind ORDER BY count DESC, kind ASC`,
+    )
+    .all(params) as { kind: string; count: number }[];
+
+  const byTool = db
+    .prepare(
+      `SELECT tool, COUNT(*) AS count FROM advisory_fires ${where}
+       GROUP BY tool ORDER BY count DESC, tool ASC`,
+    )
+    .all(params) as { tool: string; count: number }[];
+
+  return {
+    total: totalRow.total,
+    byKind,
+    byTool,
+    firstFiredAt: totalRow.first,
+    lastFiredAt: totalRow.last,
+  };
+}
+
+// ----------------------------------------------------------------------------
 // Meta key/value store + impact (before/after) analysis (v0.5)
 // ----------------------------------------------------------------------------
 
