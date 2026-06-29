@@ -666,6 +666,8 @@ export interface LessonRow {
   confidence: number;
   hits: number;
   last_hit_at: string | null;
+  /** 1 = a PreToolUse match escalates to a permission decision (see AGENTSLOG_ENFORCE). */
+  enforce: number;
 }
 
 export interface LessonInput {
@@ -677,6 +679,8 @@ export interface LessonInput {
   source?: string;
   sourceSessionId?: string | null;
   confidence?: number;
+  /** Opt-in: when true, a relevant PreToolUse match can block the tool call. */
+  enforce?: boolean;
 }
 
 /**
@@ -687,14 +691,15 @@ export function insertLesson(db: Database.Database, input: LessonInput): number 
   const row = db
     .prepare(
       `INSERT INTO lessons
-         (created_at, source, scope, tool, trigger, rule, rationale, source_session_id, confidence)
+         (created_at, source, scope, tool, trigger, rule, rationale, source_session_id, confidence, enforce)
        VALUES
-         (@createdAt, @source, @scope, @tool, @trigger, @rule, @rationale, @sourceSessionId, @confidence)
+         (@createdAt, @source, @scope, @tool, @trigger, @rule, @rationale, @sourceSessionId, @confidence, @enforce)
        ON CONFLICT(scope, rule) DO UPDATE SET
          confidence = MAX(lessons.confidence, excluded.confidence),
          tool       = COALESCE(excluded.tool, lessons.tool),
          trigger    = COALESCE(excluded.trigger, lessons.trigger),
-         rationale  = COALESCE(excluded.rationale, lessons.rationale)
+         rationale  = COALESCE(excluded.rationale, lessons.rationale),
+         enforce    = MAX(lessons.enforce, excluded.enforce)
        RETURNING id`,
     )
     .get({
@@ -707,6 +712,7 @@ export function insertLesson(db: Database.Database, input: LessonInput): number 
       rationale: input.rationale ?? null,
       sourceSessionId: input.sourceSessionId ?? null,
       confidence: input.confidence ?? 0.8,
+      enforce: input.enforce ? 1 : 0,
     }) as { id: number };
   return row.id;
 }

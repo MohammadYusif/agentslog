@@ -2,7 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildAdvisory, reflectOnSession } from '../src/cli/commands/hook.js';
+import {
+  buildAdvisory,
+  buildSubagentDigest,
+  enforcementDecision,
+  reflectOnSession,
+} from '../src/cli/commands/hook.js';
 import { openDb, writeSession } from '../src/db/index.js';
 import { insertLesson, listLessons } from '../src/db/queries.js';
 import type { ParsedSession } from '../src/parser/types.js';
@@ -328,6 +333,109 @@ describe('hook check — advisory precision', () => {
     fs.writeFileSync(existing, 'x');
     const adv = buildAdvisory(db, { tool_name: 'Write', tool_input: { file_path: existing } });
     expect(adv?.hookSpecificOutput.additionalContext).toContain('has not been read');
+    db.close();
+  });
+});
+
+describe('enforcementDecision — env parsing', () => {
+  it('defaults to "ask" when unset or set to ask', () => {
+    expect(enforcementDecision({})).toBe('ask');
+    expect(enforcementDecision({ AGENTSLOG_ENFORCE: 'ask' })).toBe('ask');
+  });
+  it('returns "deny" only for an explicit deny', () => {
+    expect(enforcementDecision({ AGENTSLOG_ENFORCE: 'deny' })).toBe('deny');
+  });
+  it('is disabled (null) by the off/0/false kill switch', () => {
+    expect(enforcementDecision({ AGENTSLOG_ENFORCE: 'off' })).toBeNull();
+    expect(enforcementDecision({ AGENTSLOG_ENFORCE: '0' })).toBeNull();
+    expect(enforcementDecision({ AGENTSLOG_ENFORCE: 'false' })).toBeNull();
+  });
+});
+
+describe('hook check — enforcement (enforce-flagged lessons)', () => {
+  const prev = process.env.AGENTSLOG_ENFORCE;
+  afterEach(() => {
+    if (prev === undefined) delete process.env.AGENTSLOG_ENFORCE;
+    else process.env.AGENTSLOG_ENFORCE = prev;
+  });
+
+  it('escalates a matched enforce lesson to a permission decision', () => {
+    delete process.env.AGENTSLOG_ENFORCE; // default → ask
+    const db = openDb(dbFile);
+    insertLesson(db, {
+      rule: 'Use python, not python3 — python3 hits the MS Store stub',
+      scope: 'global',
+      tool: 'Bash',
+      trigger: 'python3',
+      source: 'user',
+      enforce: true,
+    });
+    const adv = buildAdvisory(db, {
+      tool_name: 'Bash',
+      tool_input: { command: 'python3 build.py' },
+      cwd: '/repo',
+    });
+    expect(adv?.hookSpecificOutput.permissionDecision).toBe('ask');
+    expect(adv?.hookSpecificOutput.permissionDecisionReason).toContain('python3');
+    db.close();
+  });
+
+  it('does NOT escalate a non-enforce lesson (stays a pure advisory)', () => {
+    delete process.env.AGENTSLOG_ENFORCE;
+    const db = openDb(dbFile);
+    insertLesson(db, {
+      rule: 'Prefer git -C over cd',
+      scope: 'global',
+      tool: 'Bash',
+      trigger: 'cd ',
+      source: 'user',
+      // enforce omitted → advisory only
+    });
+    const adv = buildAdvisory(db, {
+      tool_name: 'Bash',
+      tool_input: { command: 'cd /repo && git status' },
+      cwd: '/repo',
+    });
+    expect(adv).not.toBeNull();
+    expect(adv?.hookSpecificOutput.permissionDecision).toBeUndefined();
+    db.close();
+  });
+
+  it('honors the AGENTSLOG_ENFORCE=off kill switch even for enforce lessons', () => {
+    process.env.AGENTSLOG_ENFORCE = 'off';
+    const db = openDb(dbFile);
+    insertLesson(db, {
+      rule: 'Use python, not python3',
+      scope: 'global',
+      tool: 'Bash',
+      trigger: 'python3',
+      source: 'user',
+      enforce: true,
+    });
+    const adv = buildAdvisory(db, {
+      tool_name: 'Bash',
+      tool_input: { command: 'python3 x.py' },
+      cwd: '/repo',
+    });
+    expect(adv).not.toBeNull(); // still advises
+    expect(adv?.hookSpecificOutput.permissionDecision).toBeUndefined(); // but does not block
+    db.close();
+  });
+});
+
+describe('buildSubagentDigest', () => {
+  it('returns a compact digest of the top lessons', () => {
+    const db = openDb(dbFile);
+    insertLesson(db, { rule: 'Lesson one', scope: 'global', source: 'user' });
+    const digest = buildSubagentDigest(db, '/repo');
+    expect(digest).toContain('subagent');
+    expect(digest).toContain('Lesson one');
+    db.close();
+  });
+
+  it('returns null when there are no lessons', () => {
+    const db = openDb(dbFile);
+    expect(buildSubagentDigest(db, '/repo')).toBeNull();
     db.close();
   });
 });

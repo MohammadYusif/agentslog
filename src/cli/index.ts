@@ -17,6 +17,7 @@ import {
   runHookIngest,
   runHookReflect,
   runHookSessionStart,
+  runHookSubagentStart,
 } from './commands/hook.js';
 import { runImpact } from './commands/impact.js';
 import { runIngest } from './commands/ingest.js';
@@ -47,7 +48,7 @@ program
   .description('Wire agentslog into Claude Code (MCP + memory; hooks optional)')
   .option('--no-mcp', 'skip registering the MCP server')
   .option('--no-memory', 'skip writing the ~/.claude/CLAUDE.md instruction')
-  .option('--with-hooks', 'also install PreToolUse/Stop/SessionStart hooks')
+  .option('--with-hooks', 'also install PreToolUse/Stop/SessionStart/SubagentStart hooks')
   .option('--with-reasoning', 'index reasoning (thinking) blocks during the initial ingest')
   .option('--no-ingest', 'skip the initial history ingest')
   .option('-i, --interactive', 'choose each component with a prompt (Enter = recommended)')
@@ -206,6 +207,10 @@ lesson
   .option('--trigger <str>', 'short exact command/file this applies to (e.g. "ls -Recurse")')
   .option('--rationale <text>', 'why / evidence')
   .option('--project', 'scope to the current project instead of global')
+  .option(
+    '--enforce',
+    'block (via permission prompt) when this lesson matches; use only for deterministic gotchas',
+  )
   .action((opts) => {
     runLessonAdd(opts);
   });
@@ -266,6 +271,12 @@ hook
   .description('SessionStart: surface relevant lessons + nudge after inefficient runs')
   .action(async () => {
     await runHookSessionStart();
+  });
+hook
+  .command('subagent-start')
+  .description('SubagentStart: inject the top lessons so spawned subagents start warm')
+  .action(async () => {
+    await runHookSubagentStart();
   });
 
 program.parseAsync(process.argv).catch((err) => {

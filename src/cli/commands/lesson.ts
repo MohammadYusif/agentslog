@@ -65,6 +65,7 @@ export interface LessonAddOptions {
   trigger?: string;
   rationale?: string;
   project?: boolean;
+  enforce?: boolean;
 }
 
 /** `agentslog lesson add` — record a lesson by hand. */
@@ -83,8 +84,10 @@ export function runLessonAdd(options: LessonAddOptions = {}): void {
     source: 'user',
     scope: options.project ? currentProjectScope() : 'global',
     confidence: 1.0,
+    enforce: options.enforce ?? false,
   });
-  process.stdout.write(`${chalk.green('Recorded')} lesson ${chalk.dim(`#${id}`)}.\n`);
+  const tag = options.enforce ? chalk.yellow(' (enforced)') : '';
+  process.stdout.write(`${chalk.green('Recorded')} lesson ${chalk.dim(`#${id}`)}${tag}.\n`);
 }
 
 /** `agentslog lesson rm <id>` — delete a lesson. */

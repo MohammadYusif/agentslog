@@ -173,6 +173,11 @@ export const DESIRED_HOOKS: { event: string; entry: HookEntry }[] = [
   { event: 'PreToolUse', entry: { hooks: [cmd('agentslog hook check')] } },
   { event: 'Stop', entry: { hooks: [cmd('agentslog hook reflect')] } },
   { event: 'SessionStart', entry: { hooks: [cmd('agentslog hook session-start')] } },
+  // SubagentStart fires when the Agent tool spawns a subagent — which does NOT
+  // get a SessionStart — so without this a subagent starts cold (no lesson
+  // digest). The PreToolUse hook still fires inside subagents; this just warms
+  // them up front.
+  { event: 'SubagentStart', entry: { hooks: [cmd('agentslog hook subagent-start')] } },
 ];
 
 function cmd(command: string): HookCmd {

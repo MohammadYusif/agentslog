@@ -306,6 +306,31 @@ Consider adjusting before running this.
 Lesson hits are recorded only when a lesson actually fires here — not in bulk at
 session start — so `agentslog lessons` hit counts reflect real recall, not noise.
 
+**Block known-fatal calls, don't just warn (opt-in enforcement).** Advisories are
+non-blocking by default — the agent can ignore them, and sometimes does. For
+*deterministic* gotchas (a command/file whose mere presence guarantees failure,
+e.g. `python3` on a Windows box, or a PowerShell cmdlet inside the Bash tool),
+mark the lesson `enforce` and a matching `PreToolUse` is escalated from a warning
+to a permission decision:
+
+```bash
+agentslog lesson add --rule "Use python, not python3 — python3 hits the MS Store stub" \
+  --trigger python3 --tool Bash --enforce
+```
+
+Enforcement is opt-in twice over: a lesson must carry the `enforce` flag **and**
+`AGENTSLOG_ENFORCE` must not be `off`. It defaults to `ask` (a permission prompt,
+always overridable); set `AGENTSLOG_ENFORCE=deny` to harden to an outright block,
+or `AGENTSLOG_ENFORCE=off` as a global kill switch. Heuristic lessons (a `cd` or
+`gh` nudge) stay advisory — only flagged, trigger-bearing lessons can ever block,
+so common commands are never caught.
+
+**Warm up subagents too (a `SubagentStart` hook).** A subagent spawned by the
+`Agent` tool never gets a `SessionStart`, so it used to start cold — with no
+lesson digest. The `SubagentStart` hook injects the top lessons up front so a
+subagent begins with the same gotchas the parent session got. (The `PreToolUse`
+hook fires inside subagents regardless; this just front-loads the context.)
+
 **Learn automatically after each session (a `Stop` hook).** After every session
 agentslog re-indexes the transcript and runs `reflectOnSession` — if the same
 command failed ≥ 2 times, a lesson is recorded automatically so the next session

@@ -76,11 +76,11 @@ describe('tolerant JSON', () => {
 });
 
 describe('mergeHooks', () => {
-  it('adds the three agentslog hooks to empty settings', () => {
+  it('adds the agentslog hooks to empty settings', () => {
     const { settings, added } = mergeHooks({});
-    expect(added).toHaveLength(3);
+    expect(added).toHaveLength(4);
     expect(Object.keys(settings.hooks ?? {})).toEqual(
-      expect.arrayContaining(['PreToolUse', 'Stop', 'SessionStart']),
+      expect.arrayContaining(['PreToolUse', 'Stop', 'SessionStart', 'SubagentStart']),
     );
   });
 

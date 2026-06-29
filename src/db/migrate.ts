@@ -35,6 +35,12 @@ export function migrate(db: Database.Database): void {
     }
   }
 
+  // v7: enforce flag on existing lessons tables (CREATE TABLE IF NOT EXISTS in
+  // SCHEMA_SQL won't add a column to a table that already exists).
+  if (tableExists(db, 'lessons') && !hasColumn(db, 'lessons', 'enforce')) {
+    db.exec('ALTER TABLE lessons ADD COLUMN enforce INTEGER NOT NULL DEFAULT 0');
+  }
+
   db.exec(SCHEMA_SQL);
 
   const row = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as

@@ -2,7 +2,7 @@
  * SQLite schema definition and the current schema version.
  */
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -89,7 +89,12 @@ CREATE TABLE IF NOT EXISTS lessons (
   source_session_id TEXT,
   confidence        REAL NOT NULL DEFAULT 0.8,
   hits              INTEGER NOT NULL DEFAULT 0,      -- times recalled (usefulness)
-  last_hit_at       TEXT
+  last_hit_at       TEXT,
+  -- v7: when 1, a PreToolUse match for this lesson escalates from a non-blocking
+  -- advisory to a permission decision (ask/deny), gated by AGENTSLOG_ENFORCE.
+  -- Opt-in per lesson: only deterministic "this WILL fail" gotchas should set it,
+  -- never heuristic nudges (e.g. a cd/gh lesson), so common commands are not blocked.
+  enforce           INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_lessons_dedup ON lessons(scope, rule);
 CREATE INDEX IF NOT EXISTS idx_lessons_scope ON lessons(scope);

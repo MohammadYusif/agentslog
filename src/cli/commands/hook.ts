@@ -79,7 +79,29 @@ export interface HookAdvisory {
   hookSpecificOutput: {
     hookEventName: 'PreToolUse';
     additionalContext: string;
+    /** Set only when an enforceable lesson matched — escalates beyond advice. */
+    permissionDecision?: 'ask' | 'deny';
+    permissionDecisionReason?: string;
   };
+}
+
+/**
+ * Whether (and how) a matched enforce-flagged lesson should escalate a tool call
+ * from a non-blocking advisory to a permission decision, read from the
+ * AGENTSLOG_ENFORCE env var:
+ *   unset / "ask"        → 'ask'  (surface a permission prompt; always overridable)
+ *   "deny"               → 'deny' (block outright — the call is a known guaranteed failure)
+ *   "off" / "0" / "false"→ null   (kill switch: stay purely advisory)
+ *
+ * Enforcement is opt-in twice over: a lesson must carry enforce=1 AND this must
+ * not be disabled. Default 'ask' (never auto-deny) so a mismarked lesson can
+ * only ever prompt, not silently break a workflow.
+ */
+export function enforcementDecision(env: NodeJS.ProcessEnv = process.env): 'ask' | 'deny' | null {
+  const raw = (env.AGENTSLOG_ENFORCE ?? '').trim().toLowerCase();
+  if (raw === 'off' || raw === '0' || raw === 'false') return null;
+  if (raw === 'deny') return 'deny';
+  return 'ask'; // unset or "ask"/anything else → the safe default
 }
 
 /**
@@ -124,6 +146,11 @@ export function buildAdvisory(
     limit: 3,
     requireRelevance: true,
   });
+  // Lessons flagged enforce=1 whose trigger actually matched this command/file
+  // (a non-null trigger here means it was matched via instr, so the offending
+  // string is present — a deterministic "this WILL fail" signal). Triggerless
+  // enforce lessons are intentionally excluded: they'd block every call.
+  const enforceable = lessons.filter((l: LessonRow) => l.enforce === 1 && l.trigger);
   if (lessons.length > 0) {
     const ls = lessons.map((l: LessonRow) => `- ${l.rule}`).join('\n');
     sections.push(`📌 Lesson(s) you've recorded for this:\n${ls}`);
@@ -239,10 +266,23 @@ export function buildAdvisory(
     /* non-fatal */
   }
 
+  // Enforcement: if any matched lesson is enforce-flagged and enforcement isn't
+  // disabled, escalate from advice to a permission decision. additionalContext
+  // is preserved so the agent still sees the full reasoning either way.
+  const decision = enforceable.length > 0 ? enforcementDecision() : null;
+  const enforceBlock =
+    decision != null
+      ? {
+          permissionDecision: decision,
+          permissionDecisionReason: `agentslog enforced lesson: ${enforceable[0].rule}`,
+        }
+      : {};
+
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       additionalContext: `agentslog memory:\n${sections.join('\n\n')}\nConsider this before running.`,
+      ...enforceBlock,
     },
   };
 }
@@ -423,6 +463,47 @@ export async function runHookSessionStart(): Promise<void> {
       hookSpecificOutput: {
         hookEventName: 'SessionStart',
         additionalContext: `agentslog memory:\n${parts.join('\n\n')}`,
+      },
+    })}\n`,
+  );
+}
+
+/**
+ * Build the compact lesson digest injected when a subagent spawns. Subagents
+ * cold-start without the SessionStart digest — they only inherit the global
+ * PreToolUse hook — so the top gotchas never reach them up front. Kept short
+ * (top 3) so it doesn't bloat every subagent's context. Pure (db + project in)
+ * for testability. Returns null when there's nothing relevant to say.
+ */
+export function buildSubagentDigest(db: Database.Database, project: string): string | null {
+  const lessons = lessonsForContext(db, { project, limit: 3 });
+  if (lessons.length === 0) return null;
+  return `agentslog memory (subagent):\n${lessons.map((l) => `- ${l.rule}`).join('\n')}`;
+}
+
+/**
+ * `agentslog hook subagent-start` — SubagentStart: inject the top lessons so a
+ * freshly spawned subagent starts with the same gotchas the parent session got.
+ * Read-only and silent when there's nothing to surface (hook context).
+ */
+export async function runHookSubagentStart(): Promise<void> {
+  const raw = await readStdin();
+  let payload: SessionHookPayload;
+  try {
+    payload = JSON.parse(raw) as SessionHookPayload;
+  } catch {
+    return;
+  }
+  const project = payload.cwd ? normalizePath(payload.cwd) : '';
+  const db = openDbReadonly();
+  const digest = buildSubagentDigest(db, project);
+  if (!digest) return;
+
+  process.stdout.write(
+    `${JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'SubagentStart',
+        additionalContext: digest,
       },
     })}\n`,
   );

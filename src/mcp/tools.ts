@@ -262,6 +262,12 @@ export const MCP_TOOLS: McpTool[] = [
         .enum(['project', 'global'])
         .optional()
         .describe('"project" (default) limits it to this repo; "global" applies everywhere.'),
+      enforce: z
+        .boolean()
+        .optional()
+        .describe(
+          'When true, a future tool call matching this lesson is escalated from a warning to a permission prompt (or block). Set ONLY for deterministic "this command/file WILL fail" gotchas with an exact trigger — never for heuristic advice. Requires a trigger.',
+        ),
     },
     // Write tool: ignores the read-only handle and uses a short-lived writable one.
     handler: (_db, a) => {
@@ -273,6 +279,9 @@ export const MCP_TOOLS: McpTool[] = [
         source: 'agent',
         scope: a.scope === 'global' ? 'global' : currentProject(),
         confidence: 0.9,
+        // Only honor enforce when a trigger is present — a triggerless enforce
+        // lesson can never match deterministically and must not block calls.
+        enforce: Boolean(a.enforce) && Boolean(a.trigger),
       });
       return { recorded: true, id };
     },
