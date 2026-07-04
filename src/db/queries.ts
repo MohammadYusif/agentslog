@@ -750,12 +750,12 @@ export interface LessonContext {
   file?: string | null;
   limit?: number | null;
   /**
-   * Advisory mode: only surface a lesson when its relevance can be established.
-   * With a command/file, triggers are matched as usual. WITHOUT either (MCP
-   * tools, ToolSearch, a bare Glob, …), a non-null trigger has nothing to match
-   * against, so only truly-general (triggerless) lessons may fire. Leave unset
-   * for the session-start digest, which intentionally shows top lessons
-   * trigger-agnostically.
+   * Advisory mode: only surface a lesson when its trigger actually matches the
+   * imminent command/file. Triggerless lessons never fire here — with nothing
+   * to match, relevance can't be established, and per-call injection of
+   * universal advice is noise (it already reaches the session via the
+   * session-start and subagent-start digests). Leave unset for those digests,
+   * which intentionally show top lessons trigger-agnostically.
    */
   requireRelevance?: boolean;
 }
@@ -766,9 +766,9 @@ export interface LessonContext {
  * in that command/file are returned; with none (e.g. at session start), the top
  * scoped lessons are returned. Ordered by `hits` then `confidence`.
  *
- * In advisory mode (`requireRelevance`), a contextless call (no command/file)
- * is restricted to triggerless lessons — a triggered lesson can't be shown
- * relevant with nothing to match against, so it must not fire.
+ * In advisory mode (`requireRelevance`), only lessons whose trigger matches
+ * the command/file fire: a triggerless lesson can't be shown relevant to any
+ * specific call, and a contextless call (no command/file) surfaces nothing.
  */
 export function lessonsForContext(db: Database.Database, ctx: LessonContext): LessonRow[] {
   const clauses = ['scope IN (@proj, @global)'];
@@ -781,7 +781,9 @@ export function lessonsForContext(db: Database.Database, ctx: LessonContext): Le
 
   const hasAction = Boolean(ctx.command || ctx.file);
   if (hasAction) {
-    const subs: string[] = ['trigger IS NULL'];
+    // Advisory mode demands a real trigger match; the digests also accept
+    // triggerless (universal) lessons.
+    const subs: string[] = ctx.requireRelevance ? [] : ['trigger IS NULL'];
     if (ctx.command) {
       subs.push('instr(lower(@command), lower(trigger)) > 0');
       params.command = ctx.command;
@@ -792,10 +794,10 @@ export function lessonsForContext(db: Database.Database, ctx: LessonContext): Le
     }
     clauses.push(`(${subs.join(' OR ')})`);
   } else if (ctx.requireRelevance) {
-    // No command/file to match a trigger against: only triggerless lessons can
-    // be established as relevant. Without this, contextless advisory calls
-    // surface every tool-agnostic lesson purely by `hits` — irrelevant noise.
-    clauses.push('trigger IS NULL');
+    // No command/file to match a trigger against: nothing can be established
+    // as relevant to this call. Universal lessons reach the session via the
+    // session-start/subagent-start digests instead of every tool call.
+    return [];
   }
 
   const limit = ctx.limit && ctx.limit > 0 ? Math.floor(ctx.limit) : 5;

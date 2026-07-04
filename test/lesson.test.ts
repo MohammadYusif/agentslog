@@ -93,7 +93,7 @@ describe('lessonsForContext (recall)', () => {
     d.close();
   });
 
-  it('requireRelevance: drops triggered lessons on a contextless advisory call', () => {
+  it('requireRelevance: only trigger-matched lessons fire; contextless calls surface nothing', () => {
     const d = db();
     add(d, { rule: 'general', scope: 'global' }); // no trigger
     add(d, { rule: 'specific', scope: 'global', tool: null, trigger: 'remark-parse' });
@@ -103,15 +103,25 @@ describe('lessonsForContext (recall)', () => {
         .map((l) => l.rule)
         .sort(),
     ).toEqual(['general', 'specific']);
-    // Advisory mode with a tool but no command/file: the triggered lesson has
-    // nothing to match against, so only the triggerless one may fire.
+    // Advisory mode with a tool but no command/file: nothing can be matched,
+    // so nothing fires — universal lessons belong to the digests, not per-call.
     expect(
       lessonsForContext(d, {
         project: '/repo',
         tool: 'mcp__agentslog__get_stats',
         requireRelevance: true,
+      }),
+    ).toHaveLength(0);
+    // Advisory mode with a command: only the trigger match fires; the
+    // triggerless lesson stays out even though the command exists.
+    expect(
+      lessonsForContext(d, {
+        project: '/repo',
+        tool: 'Bash',
+        command: 'npx remark-parse README.md',
+        requireRelevance: true,
       }).map((l) => l.rule),
-    ).toEqual(['general']);
+    ).toEqual(['specific']);
     d.close();
   });
 

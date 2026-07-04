@@ -134,10 +134,10 @@ export function buildAdvisory(
   };
 
   // (a) Distilled lessons that match this tool + command/file.
-  // requireRelevance: a triggered lesson must only fire when its trigger
-  // appears in the command/file. For a contextless tool call (MCP tools,
-  // ToolSearch, a bare Glob) there's nothing to match, so only triggerless
-  // lessons surface — otherwise every tool-agnostic lesson leaks in by hits.
+  // requireRelevance: a lesson only fires when its trigger appears in the
+  // command/file. Triggerless lessons never fire per-call (contextless calls
+  // surface nothing) — universal advice reaches the session via the
+  // session-start/subagent-start digests instead.
   const lessons = lessonsForContext(db, {
     project: project ?? '',
     tool,
