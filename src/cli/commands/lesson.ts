@@ -88,6 +88,13 @@ export function runLessonAdd(options: LessonAddOptions = {}): void {
   });
   const tag = options.enforce ? chalk.yellow(' (enforced)') : '';
   process.stdout.write(`${chalk.green('Recorded')} lesson ${chalk.dim(`#${id}`)}${tag}.\n`);
+  if (!options.trigger) {
+    process.stdout.write(
+      chalk.yellow(
+        'No --trigger: this lesson will surface on every tool call. Add a short exact-match trigger unless it truly applies everywhere.\n',
+      ),
+    );
+  }
 }
 
 /** `agentslog lesson rm <id>` — delete a lesson. */

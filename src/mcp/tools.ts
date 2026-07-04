@@ -240,7 +240,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'record_lesson',
     title: 'Record a durable lesson',
     description:
-      'After you discover a non-obvious gotcha or a clearly better approach, record it here so future sessions avoid the mistake. Record only durable, generalizable lessons — not one-off facts.',
+      'After you discover a non-obvious gotcha or a clearly better approach, record it here so future sessions avoid the mistake. Record only durable, generalizable lessons — not one-off facts. Almost always pass a trigger: a lesson without one is surfaced on EVERY tool call, so it becomes noise instead of a targeted nudge.',
     schema: {
       rule: z
         .string()
@@ -255,7 +255,7 @@ export const MCP_TOOLS: McpTool[] = [
         .string()
         .optional()
         .describe(
-          'The exact command or file this lesson applies to. MUST be a short exact-match string, e.g. `ls -Recurse`, `src/auth.ts`, `prisma migrate`. Do NOT write a sentence.',
+          'The exact command or file this lesson applies to. MUST be a short exact-match string, e.g. `ls -Recurse`, `src/auth.ts`, `prisma migrate`. Do NOT write a sentence. Omit ONLY for advice that genuinely applies to every tool call — a triggerless lesson fires on all of them.',
         ),
       rationale: z.string().optional().describe('Brief why / evidence (optional).'),
       scope: z
@@ -283,6 +283,14 @@ export const MCP_TOOLS: McpTool[] = [
         // lesson can never match deterministically and must not block calls.
         enforce: Boolean(a.enforce) && Boolean(a.trigger),
       });
+      if (!a.trigger) {
+        return {
+          recorded: true,
+          id,
+          warning:
+            'No trigger: this lesson will surface on EVERY tool call. If it concerns a specific command, file, or API, re-record it with a short exact-match trigger and remove this one.',
+        };
+      }
       return { recorded: true, id };
     },
   },
